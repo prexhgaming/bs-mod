@@ -18,6 +18,42 @@
         <item name="android:forceDarkAllowed" tools:targetApi="q">false</item>
     </style>
 
+    <!-- ===================== Launcher theme ===================== -->
+    <!-- Fully immersive: the wallpaper draws behind the status and navigation
+         bars, everything else is content on top of the artwork. -->
+    <style name="Theme.Launcher" parent="Theme.MaterialComponents.NoActionBar">
+        <item name="colorPrimary">@color/launcher_accent</item>
+        <item name="colorPrimaryVariant">@color/launcher_accent_deep</item>
+        <item name="colorOnPrimary">@color/launcher_text</item>
+        <item name="colorSecondary">@color/launcher_accent_hot</item>
+        <item name="colorOnSecondary">@color/launcher_text</item>
+
+        <item name="android:windowBackground">@color/launcher_bg</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowDrawsSystemBarBackgrounds">true</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar" tools:targetApi="o_mr1">false</item>
+        <item name="android:windowTranslucentStatus">false</item>
+        <item name="android:windowActionModeOverlay">true</item>
+        <item name="android:forceDarkAllowed" tools:targetApi="q">false</item>
+        <item name="android:windowLayoutInDisplayCutoutMode" tools:targetApi="p">shortEdges</item>
+    </style>
+
+    <!-- Circular crop for the game icon. -->
+    <style name="ShapeAppearance.Launcher.Circle" parent="">
+        <item name="cornerFamily">rounded</item>
+        <item name="cornerSize">50%</item>
+    </style>
+
+    <!-- Small uppercase label used above the CTA. -->
+    <style name="TextAppearance.Launcher.Label" parent="TextAppearance.MaterialComponents.Caption">
+        <item name="android:textColor">@color/launcher_text_faint</item>
+        <item name="android:textSize">12sp</item>
+        <item name="android:letterSpacing">0.14</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
+    </style>
+
     <style name="ToolBarColorStyle" parent="ThemeOverlay.AppCompat.ActionBar">
         <item name="actionMenuTextColor">@color/white</item>
         <item name="colorControlNormal">@color/white</item>

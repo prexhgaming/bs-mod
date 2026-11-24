@@ -1,5 +1,6 @@
 package top.niunaijun.blackboxa.view.game
 
+import android.graphics.drawable.Drawable
 import android.net.Uri
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
@@ -25,6 +26,13 @@ class GameViewModel(private val repo: GameRepository) : ViewModel() {
 
     private val _apps = MutableLiveData<List<AppInfo>>(emptyList())
     val apps: LiveData<List<AppInfo>> = _apps
+
+    /** Icon + label of the one game this launcher exists for. */
+    private val _gameIcon = MutableLiveData<Drawable?>()
+    val gameIcon: LiveData<Drawable?> = _gameIcon
+
+    private val _gameLabel = MutableLiveData(GameTarget.DISPLAY_NAME)
+    val gameLabel: LiveData<String> = _gameLabel
 
     /** Provisioning step currently running, used for the progress label. */
     private val _stage = MutableLiveData(GameRepository.Stage.WAITING)
@@ -63,6 +71,7 @@ class GameViewModel(private val repo: GameRepository) : ViewModel() {
             provisioning = false
             _status.value = result.copy(busy = false)
             loadApps()
+            loadIdentity()
 
             if (result.importedNow) {
                 _message.value = getString(R.string.message_game_ready, GameTarget.DISPLAY_NAME)
@@ -70,16 +79,25 @@ class GameViewModel(private val repo: GameRepository) : ViewModel() {
         }
     }
 
-    /** Reloads only the sandbox app list. */
+    /** Reloads only the game identity + sandbox app list. */
     fun refresh() {
         viewModelScope.launch {
             loadApps()
+            loadIdentity()
         }
     }
 
     private suspend fun loadApps() {
         val list = withContext(Dispatchers.IO) { repo.listSandboxApps() }
         _apps.postValue(list)
+    }
+
+    /** Refreshes the hero artwork/label once the sandbox knows about the game. */
+    private suspend fun loadIdentity() {
+        val icon = withContext(Dispatchers.IO) { repo.gameIcon() }
+        val label = withContext(Dispatchers.IO) { repo.gameLabel() }
+        _gameIcon.postValue(icon)
+        _gameLabel.postValue(label)
     }
 
     fun launchApp(packageName: String) {
@@ -128,6 +146,7 @@ class GameViewModel(private val repo: GameRepository) : ViewModel() {
             val refreshed = withContext(Dispatchers.IO) { repo.provision() }
             _status.value = refreshed.copy(busy = false)
             loadApps()
+            loadIdentity()
 
             _message.value = if (result.success) {
                 getString(R.string.message_game_imported)

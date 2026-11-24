@@ -18,13 +18,14 @@
         android:theme="@style/Theme.BlackBox"
         tools:targetApi="n">
 
-        <!-- The only screen: sandbox app list + automatic provisioning. -->
+        <!-- The only screen: a dedicated launcher for the target game. -->
         <activity
             android:name=".view.game.GameActivity"
             android:configChanges="keyboard|keyboardHidden|orientation|screenSize|screenLayout|uiMode"
             android:exported="true"
             android:launchMode="singleTop"
-            android:screenOrientation="portrait">
+            android:screenOrientation="portrait"
+            android:theme="@style/Theme.Launcher">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
 

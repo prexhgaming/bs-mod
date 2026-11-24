@@ -1,6 +1,7 @@
 package top.niunaijun.blackboxa.data
 
 import android.content.pm.ApplicationInfo
+import android.graphics.drawable.Drawable
 import android.net.Uri
 import android.util.Log
 import top.niunaijun.blackbox.BlackBoxCore
@@ -196,6 +197,41 @@ class GameRepository {
             isXpModule = false
         )
     }
+
+    /**
+     * Icon of the target game: the copy inside the sandbox is preferred because
+     * that is what the player actually launches, the host install is the
+     * fallback so the launcher still looks right before provisioning finishes.
+     */
+    fun gameIcon(): Drawable? = runCatching {
+        val sandboxInfo = sandboxGameInfo()
+        if (sandboxInfo != null) {
+            runCatching {
+                BlackBoxCore.getPackageManager().getApplicationIcon(sandboxInfo)
+            }.getOrNull()
+        } else {
+            hostGameInfo()?.let { info ->
+                runCatching {
+                    App.getContext().packageManager.getApplicationIcon(info)
+                }.getOrNull()
+            }
+        }
+    }.getOrNull()
+
+    /** Label of the target game, falling back to the hard-coded display name. */
+    fun gameLabel(): String = runCatching {
+        val host = hostGameInfo() ?: return@runCatching GameTarget.DISPLAY_NAME
+        App.getContext().packageManager.getApplicationLabel(host).toString()
+    }.getOrNull()?.takeIf { it.isNotBlank() } ?: GameTarget.DISPLAY_NAME
+
+    private fun sandboxGameInfo(): ApplicationInfo? = runCatching {
+        BlackBoxCore.get().getInstalledApplications(0, GameTarget.USER_ID)
+            .firstOrNull { it.packageName == GameTarget.PACKAGE_NAME }
+    }.getOrNull()
+
+    private fun hostGameInfo(): ApplicationInfo? = runCatching {
+        App.getContext().packageManager.getApplicationInfo(GameTarget.PACKAGE_NAME, 0)
+    }.getOrNull()
 
     companion object {
         private const val TAG = "GameRepository"
