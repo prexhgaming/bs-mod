@@ -36,7 +36,7 @@ jobs:
         id: build
         run: |
           set -o pipefail
-          ./gradlew :app:assembleRelease --stacktrace 2>&1 | tee build.log
+          ./gradlew :app:assembleRelease 2>&1 | tee build.log
 
       - name: Send build.log to Telegram on failure
         if: failure()
