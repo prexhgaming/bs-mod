@@ -2,8 +2,6 @@ name: Release APK
 
 on:
   push:
-    tags:
-      - 'v*'
   workflow_dispatch:
 
 permissions:
@@ -11,7 +9,8 @@ permissions:
 
 jobs:
   release:
-    runs-on: ubuntu-latest
+    # Pin runner: setup-android@v3 is known-broken on newer ubuntu-latest images.
+    runs-on: ubuntu-22.04
 
     steps:
       - name: Checkout
@@ -25,15 +24,33 @@ jobs:
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          # Accept licenses here so the SDK is usable right away.
+          accept-android-sdk-licenses: true
 
-      - name: Accept licenses and install SDK/NDK components
+      - name: Diagnose Android SDK setup
         run: |
-          yes | sdkmanager --licenses > /dev/null 2>&1 || true
-          sdkmanager --install "platforms;android-35" "build-tools;35.0.0" > /dev/null 2>&1 || true
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
+          export ANDROID_HOME="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
+          export ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
+          echo "PATH=$PATH"
+          echo "sdkmanager: $(command -v sdkmanager || echo 'NOT ON PATH')"
+          ls -la "$ANDROID_HOME/cmdline-tools/latest/bin" 2>/dev/null || true
+
+      - name: Install SDK components
+        run: |
+          export ANDROID_HOME="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
+          export ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
+          export PATH="$ANDROID_HOME/cmdline-tools/latest/bin:$PATH"
+          echo "=== platforms ==="
+          sdkmanager --list_installed 2>&1 | grep -E "platforms|platform-tools" || true
+          sdkmanager --install "platforms;android-35" "build-tools;35.0.0" "platform-tools"
           # Pinned by app/build.gradle + Bcore/build.gradle (ndkVersion).
-          # If the SDK repo does not have it yet, AGP falls back to its own resolver.
-          sdkmanager --install "ndk;29.0.13846066" > /dev/null 2>&1 || true
-          echo "Installed NDKs:"; ls "$ANDROID_HOME/ndk" 2>/dev/null || true
+          # If the SDK repo lacks it, AGP resolves the NDK itself during build.
+          sdkmanager --install "ndk;29.0.13846066" || true
+          echo "=== installed NDKs ==="
+          ls "$ANDROID_HOME/ndk" 2>/dev/null || echo "(none)"
 
       - name: Cache Gradle
         uses: actions/cache@v4
@@ -49,9 +66,44 @@ jobs:
         run: chmod +x gradlew
 
       - name: Build release APK
-        run: ./gradlew :app:assembleRelease --no-daemon --stacktrace
+        id: build
+        run: |
+          # pipefail makes a Gradle failure fail this step even through tee.
+          set -o pipefail
+          ./gradlew :app:assembleRelease 2>&1 | tee build.log
+
+      - name: Send build.log to Telegram on failure
+        if: failure()
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          if [ -z "$TELEGRAM_BOT_TOKEN" ] || [ -z "$TELEGRAM_CHAT_ID" ]; then
+            echo "Telegram secrets missing; skipping notification."
+            exit 0
+          fi
+          API="https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}"
+          curl -sS -X POST "$API/sendMessage" \
+            -d chat_id="$TELEGRAM_CHAT_ID" \
+            -d text="Build FAILED - ${GITHUB_REF_NAME} @ ${GITHUB_SHA::7}. Sending build.log..." || true
+          if [ -f build.log ]; then
+            # Telegram bot uploads cap at 50 MB; keep the tail with the actual error.
+            if [ "$(stat -c%s build.log)" -gt 20000000 ]; then
+              tail -c 20000000 build.log > build.log.trim
+              mv build.log.trim build.log
+            fi
+            curl -sS -X POST "$API/sendDocument" \
+              -F chat_id="$TELEGRAM_CHAT_ID" \
+              -F caption="build.log - failed build ${GITHUB_SHA::7}" \
+              -F document=@build.log || true
+          else
+            curl -sS -X POST "$API/sendMessage" \
+              -d chat_id="$TELEGRAM_CHAT_ID" \
+              -d text="No build.log was produced (failure happened before Gradle ran)." || true
+          fi
 
       - name: Report APK sizes
+        if: always() && steps.build.outcome == 'success'
         run: |
           {
             echo "## Release APK sizes"
@@ -68,6 +120,7 @@ jobs:
           shopt -u nullglob
 
       - name: Upload APK as workflow artifact
+        if: always() && steps.build.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
           name: release-apk
@@ -75,3 +128,31 @@ jobs:
             app/build/outputs/apk/release/*.apk
           if-no-files-found: error
           retention-days: 30
+
+      - name: Send APK to Telegram on success
+        if: always() && steps.build.outcome == 'success'
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          if [ -z "$TELEGRAM_BOT_TOKEN" ] || [ -z "$TELEGRAM_CHAT_ID" ]; then
+            echo "Telegram secrets missing; skipping notification."
+            exit 0
+          fi
+          API="https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}"
+          shopt -s nullglob
+          apks=(app/build/outputs/apk/release/*.apk)
+          shopt -u nullglob
+          if [ ${#apks[@]} -eq 0 ]; then
+            curl -sS -X POST "$API/sendMessage" \
+              -d chat_id="$TELEGRAM_CHAT_ID" \
+              -d text="Build reported success but no APK was found." || true
+            exit 1
+          fi
+          for apk in "${apks[@]}"; do
+            size=$(du -h "$apk" | cut -f1)
+            curl -sS -X POST "$API/sendDocument" \
+              -F chat_id="$TELEGRAM_CHAT_ID" \
+              -F caption="Build OK - $(basename "$apk") ($size) - ${GITHUB_REF_NAME} @ ${GITHUB_SHA::7}" \
+              -F document=@"$apk"
+          done
