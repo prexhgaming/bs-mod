@@ -4,6 +4,8 @@ import android.app.Application
 import android.content.Context
 import android.util.Log
 import top.niunaijun.blackbox.BlackBoxCore
+import top.niunaijun.blackboxa.GameTarget
+import top.niunaijun.blackboxa.util.PySdkDumper
 import top.niunaijun.blackbox.app.BActivityThread
 import top.niunaijun.blackbox.app.configuration.AppLifecycleCallback
 import top.niunaijun.blackbox.app.configuration.ClientConfiguration
@@ -142,6 +144,15 @@ class BlackBoxLoader {
                 ) {
                     try {
                         Log.d(TAG, "afterApplicationOnCreate: pkg $packageName, processName $processName")
+                        // The guest lifecycle runs inside the game's own process,
+                        // which is the only place the statically linked CPython
+                        // exists. When the dumper is enabled, load libbs_dumper.so
+                        // here: its JNI_OnLoad spawns the worker thread, and the
+                        // single JNI call hands over the Downloads folder. Native
+                        // discovers the rest of the sandbox layout itself.
+                        if (application != null && packageName == GameTarget.PACKAGE_NAME) {
+                            PySdkDumper.arm(application, packageName)
+                        }
                         RockerManager.init(application,userId)
                     } catch (e: Exception) {
                         Log.e(TAG, "Error in afterApplicationOnCreate: ${e.message}")

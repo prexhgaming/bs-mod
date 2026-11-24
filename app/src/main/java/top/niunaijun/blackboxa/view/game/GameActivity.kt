@@ -55,7 +55,7 @@ class GameActivity : AppCompatActivity() {
     private lateinit var viewModel: GameViewModel
 
     /** Label currently shown for the game (live value, used in copy). */
-    private var gameLabel: String = GameTarget.DISPLAY_NAME
+    private var gameLabel: String = GameTarget.displayName()
 
     /** True when the notice action should open the APK picker instead of retrying. */
     private var noticePicksApk = false
@@ -202,6 +202,19 @@ class GameActivity : AppCompatActivity() {
         }
     }
 
+    /**
+     * The dump writes into the public Downloads folder, so on API 30+ it needs
+     * "All files access" (`MANAGE_EXTERNAL_STORAGE`). That permission has no
+     * runtime dialog, so we open the dedicated Settings screen where the user can
+     * flip it; the checkbox stays enabled either way and the dump simply falls
+     * back to app storage if the grant is never given.
+     */
+    private fun requestDumpAccessIfNeeded() {
+        if (PySdkDumper.hasExternalWriteAccess(this)) return
+        val intent = PySdkDumper.allFilesAccessIntent(this) ?: return
+        runCatching { startActivity(intent) }
+    }
+
     private fun showOverflow() {
         val popup = PopupMenu(this, binding.moreButton)
         popup.menuInflater.inflate(R.menu.menu_launcher, popup.menu)
@@ -228,48 +241,12 @@ class GameActivity : AppCompatActivity() {
                     val enabled = !item.isChecked
                     item.isChecked = enabled
                     PySdkDumper.setEnabled(this, enabled)
-                    if (enabled) {
-                        val status = viewModel.status.value
-                        if (status?.gameInSandbox == true) {
-                            toast(R.string.sdk_dump_running)
-                            val pkg = GameTarget.PACKAGE_NAME
-                            // Run on a background thread — the native dumper does file I/O.
-                            Thread {
-                                val result = PySdkDumper.run(
-                                    this@GameActivity,
-                                    pkg,
-                                    status.nativeLibDir.orEmpty(),
-                                    status.dataDir.orEmpty(),
-                                    status.sourceDir.orEmpty()
-                                )
-                                runOnUiThread {
-                                    if (result == null) {
-                                        item.isChecked = false
-                                        toast(R.string.sdk_dump_fail)
-                                        return@runOnUiThread
-                                    }
-                                    val parts = result.split("|", limit = 3)
-                                    when (parts.getOrNull(0)) {
-                                        "OK" -> toast(getString(R.string.sdk_dump_ok, parts.getOrNull(1).orEmpty()))
-                                        "FAIL" -> {
-                                            val err = parts.getOrNull(2).orEmpty()
-                                            if (err.contains("no python runtime", ignoreCase = true)) {
-                                                toast(getString(R.string.sdk_dump_no_python, pkg))
-                                            } else {
-                                                toast(getString(R.string.sdk_dump_fail, err))
-                                            }
-                                        }
-                                        else -> toast(result)
-                                    }
-                                }
-                            }.start()
-                        } else {
-                            toast(getString(R.string.sdk_dump_no_python, GameTarget.DISPLAY_NAME))
-                            item.isChecked = false
-                        }
-                    } else {
-                        toast(R.string.sdk_dump_disabled)
-                    }
+                    // The dump no longer runs from here: `libbs_dumper.so` is loaded
+                    // inside the game's own process (guest lifecycle) while this
+                    // checkbox is on, and its JNI_OnLoad spawns the dump thread.
+                    // So the toggle takes effect on the next game launch.
+                    if (enabled) requestDumpAccessIfNeeded()
+                    toast(if (enabled) R.string.sdk_dump_enabled else R.string.sdk_dump_disabled)
                     true
                 }
 

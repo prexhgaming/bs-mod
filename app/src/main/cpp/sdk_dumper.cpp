@@ -1,27 +1,28 @@
-// libbs_dumper.so — Python SDK dumper for the target game (CPython 3.11 title).
+// libbs_dumper.so — in-process Python SDK dumper for the sandboxed game.
 //
-// The game statically links CPython into libGame.so, so the interpreter symbols
-// are already mapped in the game process. We do NOT ship our own Python: we
-// resolve what the game already has (dlopen/dlsym) and, when the dumper is
-// enabled, serialize the real runtime layout into an SDK folder.
+// Loaded by the host app *inside the game's own process* (the BlackBox engine
+// runs the guest Application in a host-package process). Because we are already
+// in the target process, Java does not have to hand us the game's directories:
+// we discover the sandbox layout ourselves from /proc/self/maps.
 //
-// Two paths are supported:
-//   1. interpreter live  -> run a small Python script that writes sys.path,
-//      sys.version, sys.prefix and copies site-packages / stdlib trees.
-//   2. interpreter found but not initialised (dumper ran too early) -> write a
-//      manifest from the on-disk lib/stdlib files so the SDK is still useful.
+// The one JNI entry point exists purely so Java can pass the single path only it
+// can resolve — the public Downloads directory. JNI_OnLoad spawns a worker
+// thread which waits for that path and then performs the dump.
 
 #include <jni.h>
 #include <android/log.h>
-#include <dlfcn.h>
 #include <dirent.h>
+#include <dlfcn.h>
+#include <pthread.h>
+#include <sys/prctl.h>
 #include <sys/stat.h>
-#include <sys/types.h>
 #include <unistd.h>
 
+#include <cctype>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
-#include <fstream>
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -32,25 +33,72 @@
 
 namespace {
 
-constexpr size_t kMaxCopyDepth = 24;
-constexpr size_t kMaxCopyFiles = 20000;
-size_t gCopiedFiles = 0;
+// ---------------------------------------------------------------- tuning
+
+// How long the worker waits for Java to hand it the Downloads path.
+constexpr int kConfigTimeoutSec = 45;
+
+// Scanning: 84 MB libGame.so must fit, so no small cap; read in chunks.
+constexpr size_t kScanChunk = 4 * 1024 * 1024;
+constexpr int kMaxScanBytes = 512 * 1024 * 1024;
+
+// Copy limits, so a pathological tree cannot fill the disk.
+constexpr int kMaxPyFiles = 8192;
+constexpr long long kMaxPyBytes = 512LL * 1024 * 1024;
+constexpr long long kMaxLibBytes = 512LL * 1024 * 1024;
+constexpr long long kMaxSingleLibBytes = 160LL * 1024 * 1024;
+constexpr int kMaxWalkDepth = 12;
+
+// ---------------------------------------------------------------- state
+
+pthread_mutex_t gLock = PTHREAD_MUTEX_INITIALIZER;
+pthread_cond_t gCond = PTHREAD_COND_INITIALIZER;
+std::string gOutDir;      // set by nativeStart()
+bool gArmed = false;      // guarded by gLock
+bool gThreadStarted = false;
+
+JavaVM* gVm = nullptr;    // cached; the worker makes no Java calls
 
 // ---------------------------------------------------------------- strings
 
-std::string JStr(JNIEnv* env, jstring value) {
-    if (value == nullptr) return {};
-    const char* chars = env->GetStringUTFChars(value, nullptr);
-    if (chars == nullptr) return {};
-    std::string out(chars);
-    env->ReleaseStringUTFChars(value, chars);
+std::string JStr(JNIEnv* env, jstring s) {
+    if (s == nullptr) return {};
+    const char* c = env->GetStringUTFChars(s, nullptr);
+    if (c == nullptr) return {};
+    std::string out(c);
+    env->ReleaseStringUTFChars(s, c);
     return out;
+}
+
+std::string Join(const std::string& a, const std::string& b) {
+    if (a.empty()) return b;
+    if (b.empty()) return a;
+    if (a.back() == '/') return a + b;
+    return a + "/" + b;
+}
+
+std::string DirName(const std::string& path) {
+    const size_t slash = path.rfind('/');
+    if (slash == std::string::npos || slash == 0) return "/";
+    return path.substr(0, slash);
+}
+
+std::string BaseName(const std::string& path) {
+    const size_t slash = path.rfind('/');
+    if (slash == std::string::npos) return path;
+    return path.substr(slash + 1);
 }
 
 bool EndsWith(const std::string& s, const std::string& suffix) {
     return s.size() >= suffix.size() &&
            s.compare(s.size() - suffix.size(), suffix.size(), suffix) == 0;
 }
+
+bool StartsWith(const std::string& s, const std::string& prefix) {
+    return s.size() >= prefix.size() && s.compare(0, prefix.size(), prefix) == 0;
+}
+
+// ---------------------------------------------------------------- filesystem
 
 bool Exists(const std::string& path) {
     struct stat st {};
@@ -62,36 +110,280 @@ bool IsDir(const std::string& path) {
     return stat(path.c_str(), &st) == 0 && S_ISDIR(st.st_mode);
 }
 
-bool EnsureDir(const std::string& path) {
-    if (path.empty() || IsDir(path)) return true;
-    const size_t slash = path.find_last_of('/');
-    if (slash != std::string::npos && slash > 0) {
-        if (!EnsureDir(path.substr(0, slash))) return false;
+long long FileSize(const std::string& path) {
+    struct stat st {};
+    if (stat(path.c_str(), &st) != 0) return -1;
+    return static_cast<long long>(st.st_size);
+}
+
+bool MakeDirs(const std::string& path) {
+    if (path.empty()) return false;
+    std::string acc;
+    acc.reserve(path.size());
+    size_t i = 0;
+    if (path[0] == '/') {
+        acc.push_back('/');
+        i = 1;
     }
-    return mkdir(path.c_str(), 0775) == 0 || IsDir(path);
+    while (i <= path.size()) {
+        const size_t slash = path.find('/', i);
+        const std::string part =
+                path.substr(i, slash == std::string::npos ? std::string::npos : slash - i);
+        if (!part.empty()) {
+            acc = acc.empty() || acc.back() == '/' ? acc + part : acc + "/" + part;
+            if (mkdir(acc.c_str(), 0775) != 0 && !IsDir(acc)) return false;
+        }
+        if (slash == std::string::npos) break;
+        i = slash + 1;
+    }
+    return IsDir(path);
 }
 
-bool WriteFile(const std::string& path, const std::string& data) {
-    std::ofstream out(path, std::ios::binary | std::ios::trunc);
-    if (!out) return false;
-    out.write(data.data(), static_cast<std::streamsize>(data.size()));
-    return out.good();
+bool ReadWhole(const std::string& path, std::string* out) {
+    FILE* f = fopen(path.c_str(), "rb");
+    if (f == nullptr) return false;
+    char buf[64 * 1024];
+    size_t n;
+    while ((n = fread(buf, 1, sizeof(buf), f)) > 0) out->append(buf, n);
+    fclose(f);
+    return true;
 }
 
-std::string ReadTextFile(const std::string& path, size_t maxBytes = 4u << 20) {
-    std::ifstream in(path, std::ios::binary);
-    if (!in) return {};
-    std::string data;
-    data.resize(maxBytes);
-    in.read(&data[0], static_cast<std::streamsize>(maxBytes));
-    data.resize(static_cast<size_t>(in.gcount()));
-    return data;
+bool WriteText(const std::string& path, const std::string& text) {
+    FILE* f = fopen(path.c_str(), "wb");
+    if (f == nullptr) return false;
+    const size_t wrote = fwrite(text.data(), 1, text.size(), f);
+    fclose(f);
+    return wrote == text.size();
 }
 
-std::string JsonEscape(const std::string& in) {
+bool CopyFile(const std::string& src, const std::string& dst) {
+    FILE* in = fopen(src.c_str(), "rb");
+    if (in == nullptr) return false;
+    FILE* out = fopen(dst.c_str(), "wb");
+    if (out == nullptr) {
+        fclose(in);
+        return false;
+    }
+    std::vector<char> buf(256 * 1024);
+    bool ok = true;
+    size_t n;
+    while ((n = fread(buf.data(), 1, buf.size(), in)) > 0) {
+        if (fwrite(buf.data(), 1, n, out) != n) {
+            ok = false;
+            break;
+        }
+    }
+    fclose(in);
+    fclose(out);
+    if (!ok) { remove(dst.c_str()); return false; }
+    return true;
+}
+
+// Recursive walk with a per-entry callback. `rel` is the path below `root`.
+void Walk(const std::string& root, const std::string& rel, int depth,
+          const std::function<void(const std::string& abs,
+                                   const std::string& relPath)>& cb) {
+    if (depth > kMaxWalkDepth) return;
+    const std::string dir = rel.empty() ? root : Join(root, rel);
+    DIR* d = opendir(dir.c_str());
+    if (d == nullptr) return;
+    struct dirent* e;
+    while ((e = readdir(d)) != nullptr) {
+        const std::string name = e->d_name;
+        if (name == "." || name == "..") continue;
+        const std::string childRel = rel.empty() ? name : rel + "/" + name;
+        const std::string abs = Join(root, childRel);
+        if (IsDir(abs)) {
+            Walk(root, childRel, depth + 1, cb);
+        } else {
+            cb(abs, childRel);
+        }
+    }
+    closedir(d);
+}
+
+// ---------------------------------------------------------------- discovery
+
+struct Discovered {
+    std::string process;   // /proc/self/cmdline
+    std::string root;      // .../<host data>/blackbox
+    std::string pkg;       // com.netease.newspike
+    std::string appDir;    // <root>/data/app/<pkg>
+    std::string libDir;    // <root>/data/app/<pkg>/lib
+    std::string dataDir;   // <root>/data/user/<uid>/<pkg>
+    std::string apkPath;
+    std::vector<std::string> modules;  // every path seen in maps
+};
+
+std::string ReadCmdline() {
+    std::string s;
+    ReadWhole("/proc/self/cmdline", &s);
+    const size_t nul = s.find('\0');
+    if (nul != std::string::npos) s.resize(nul);
+    return s;
+}
+
+std::vector<std::string> ParseMapsPaths(const std::string& maps) {
+    std::vector<std::string> paths;
+    size_t pos = 0;
+    while (pos < maps.size()) {
+        size_t nl = maps.find('\n', pos);
+        if (nl == std::string::npos) nl = maps.size();
+        const std::string line = maps.substr(pos, nl - pos);
+        pos = nl + 1;
+        // "<addr> perms offset dev inode   /path/to/file"
+        size_t slash = line.find('/');
+        if (slash == std::string::npos) continue;
+        // Guard against a '/' inside the address/perms fields.
+        const size_t fields = line.find("  ");
+        if (fields != std::string::npos && slash < fields) {
+            slash = line.find('/', fields);
+            if (slash == std::string::npos) continue;
+        }
+        std::string path = line.substr(slash);
+        while (!path.empty() && (path.back() == ' ' || path.back() == '\r')) path.pop_back();
+        if (!path.empty()) paths.push_back(path);
+    }
+    return paths;
+}
+
+Discovered Discover() {
+    Discovered d;
+    d.process = ReadCmdline();
+
+    std::string maps;
+    if (!ReadWhole("/proc/self/maps", &maps)) {
+        LOGW("discover: cannot read /proc/self/maps");
+        return d;
+    }
+    d.modules = ParseMapsPaths(maps);
+
+    // The engine keeps the guest copy of the APK at
+    // <root>/data/app/<pkg>/base.apk and maps it, which is what pins down both
+    // the sandbox root and the package name.
+    for (const std::string& p : d.modules) {
+        const size_t at = p.find("/data/app/");
+        if (at == std::string::npos) continue;
+        if (!EndsWith(p, ".apk")) continue;
+        d.apkPath = p;
+        d.appDir = DirName(p);
+        d.pkg = BaseName(d.appDir);
+        d.root = d.appDir.substr(0, at);  // strip "/data/app/<pkg>"
+        break;
+    }
+    if (d.appDir.empty()) {
+        LOGW("discover: no sandbox APK mapping found");
+        return d;
+    }
+    d.libDir = Join(d.appDir, "lib");
+
+    // Data dir: <root>/data/user/<uid>/<pkg>. The uid is not getuid() (the
+    // sandbox is not a real Android user), so read it from the layout.
+    const std::string userRoot = Join(d.root, "data/user");
+    DIR* ud = opendir(userRoot.c_str());
+    if (ud != nullptr) {
+        struct dirent* e;
+        std::string fallback;
+        while ((e = readdir(ud)) != nullptr) {
+            const std::string uid = e->d_name;
+            if (uid == "." || uid == "..") continue;
+            const std::string candidate = Join(Join(userRoot, uid), d.pkg);
+            if (!IsDir(candidate)) continue;
+            if (uid == "0") { d.dataDir = candidate; break; }
+            if (fallback.empty()) fallback = candidate;
+        }
+        closedir(ud);
+        if (d.dataDir.empty()) d.dataDir = fallback;
+    }
+
+    LOGI("discover: pkg=%s process=%s lib=%s data=%s",
+         d.pkg.c_str(), d.process.c_str(), d.libDir.c_str(), d.dataDir.c_str());
+    return d;
+}
+
+// ---------------------------------------------------------------- python
+
+struct PyFinding {
+    std::string version;   // "3.11.2"
+    bool sawCpython = false;
+    std::string source;    // file the version came from
+};
+
+// Looks for the Py_GetVersion banner ("3.11.2 (main, ...)") and the literal
+// "CPython" in a binary, scanned in chunks with a small overlap.
+bool ScanBinaryForPython(const std::string& path, PyFinding* out) {
+    FILE* f = fopen(path.c_str(), "rb");
+    if (f == nullptr) return false;
+
+    const std::string cpython = "CPython";
+    const size_t overlap = 64;
+    std::vector<char> buf(kScanChunk + overlap);
+    size_t carry = 0;
+    long long scanned = 0;
+    bool found = false;
+
+    while (scanned < kMaxScanBytes) {
+        const size_t n = fread(buf.data() + carry, 1, kScanChunk, f);
+        if (n == 0) break;
+        scanned += static_cast<long long>(n);
+        const size_t total = carry + n;
+        const std::string chunk(buf.data(), total);
+
+        if (!out->sawCpython && chunk.find(cpython) != std::string::npos) {
+            out->sawCpython = true;
+            found = true;
+        }
+
+        // <digits>.<digits>.<digits> followed by " (" -> Py_GetVersion banner.
+        for (size_t i = 0; i + 8 < chunk.size(); ++i) {
+            if (!isdigit(static_cast<unsigned char>(chunk[i]))) continue;
+            size_t j = i;
+            int dots = 0;
+            while (j < chunk.size() &&
+                   (isdigit(static_cast<unsigned char>(chunk[j])) || chunk[j] == '.')) {
+                if (chunk[j] == '.') dots++;
+                j++;
+            }
+            if (dots != 2) continue;
+            if (j >= chunk.size() || chunk[j] != ' ') continue;
+            if (j + 1 >= chunk.size() || chunk[j + 1] != '(') continue;
+            const std::string version = chunk.substr(i, j - i);
+            if (version.size() < 5 || version.size() > 12) continue;
+            if (out->version.empty()) {
+                out->version = version;
+                out->source = path;
+            }
+            found = true;
+            break;
+        }
+        if (!out->version.empty() && out->sawCpython) break;
+
+        carry = total < overlap ? total : overlap;
+        memmove(buf.data(), chunk.data() + (total - carry), carry);
+    }
+    fclose(f);
+
+    // A "3.11.2 (main, ...)" hit is only credible with CPython nearby.
+    if (!out->version.empty() && !out->sawCpython) out->version.clear();
+    return found;
+}
+
+bool LooksLikePythonFile(const std::string& name) {
+    static const char* kSuffixes[] = {".py", ".pyc", ".pyo", ".pyd", ".pyz", ".mpk",
+                                      ".zip", ".whl", ".egg"};
+    for (const char* s : kSuffixes) {
+        if (EndsWith(name, s)) return true;
+    }
+    return false;
+}
+
+// ---------------------------------------------------------------- json
+
+std::string JsonEscape(const std::string& raw) {
     std::string out;
-    out.reserve(in.size() + 8);
-    for (char c : in) {
+    out.reserve(raw.size() + 8);
+    for (const char c : raw) {
         switch (c) {
             case '"': out += "\\\""; break;
             case '\\': out += "\\\\"; break;
@@ -104,429 +396,221 @@ std::string JsonEscape(const std::string& in) {
                     snprintf(buf, sizeof(buf), "\\u%04x", c);
                     out += buf;
                 } else {
-                    out += c;
+                    out.push_back(c);
                 }
         }
     }
     return out;
 }
 
-// ---------------------------------------------------------------- fs walk
+std::string JsonStr(const std::string& s) { return "\"" + JsonEscape(s) + "\""; }
 
-std::vector<std::string> ListDir(const std::string& dir) {
-    std::vector<std::string> out;
-    DIR* handle = opendir(dir.c_str());
-    if (handle == nullptr) return out;
-    while (dirent* entry = readdir(handle)) {
-        const char* name = entry->d_name;
-        if (strcmp(name, ".") == 0 || strcmp(name, "..") == 0) continue;
-        out.emplace_back(name);
-    }
-    closedir(handle);
-    return out;
-}
+// ---------------------------------------------------------------- dump
 
-bool CopyFileRaw(const std::string& from, const std::string& to) {
-    if (gCopiedFiles >= kMaxCopyFiles) return false;
-    if (!EnsureDir(to.substr(0, to.find_last_of('/')))) return false;
-
-    std::ifstream src(from, std::ios::binary);
-    if (!src) return false;
-    std::ofstream dst(to, std::ios::binary | std::ios::trunc);
-    if (!dst) return false;
-
-    dst << src.rdbuf();
-    if (dst.good()) {
-        gCopiedFiles++;
-        return true;
-    }
-    return false;
-}
-
-// Copies a directory tree, skipping entries that would explode the output.
-void CopyTree(const std::string& from, const std::string& to, size_t depth = 0) {
-    if (depth > kMaxCopyDepth || gCopiedFiles >= kMaxCopyFiles) return;
-    if (!IsDir(from)) return;
-    EnsureDir(to);
-
-    for (const std::string& name : ListDir(from)) {
-        if (name == "__pycache__") continue;              // regenerated at runtime
-        if (name == ".git" || name == ".svn") continue;
-
-        const std::string srcPath = from + "/" + name;
-        const std::string dstPath = to + "/" + name;
-
-        if (IsDir(srcPath)) {
-            CopyTree(srcPath, dstPath, depth + 1);
-        } else {
-            CopyFileRaw(srcPath, dstPath);
-        }
-    }
-}
-
-// ------------------------------------------------------------- CPython API
-
-// Minimal subset of the CPython C-API we resolve lazily from the game's process.
-struct PyApi {
-    void* handle = nullptr;
-
-    const char* (*get_version)() = nullptr;
-    int (*is_initialized)() = nullptr;
-    void* (*gil_ensure)() = nullptr;
-    void (*gil_release)(void*) = nullptr;
-    int (*run_simple_string)(const char*) = nullptr;
-    const char* (*get_path)() = nullptr;
-    const char* (*get_prefix)() = nullptr;
-    wchar_t* (*get_program_name)() = nullptr;
-
-    bool HasInterpreter() const { return get_version != nullptr; }
-    bool IsLive() const { return is_initialized != nullptr && is_initialized() != 0; }
+struct DumpStats {
+    int pyFiles = 0;
+    long long pyBytes = 0;
+    int libs = 0;
+    long long libBytes = 0;
 };
 
-template <typename T>
-void Resolve(void* handle, const char* symbol, T& out) {
-    if (out != nullptr) return;
-    out = reinterpret_cast<T>(dlsym(handle, symbol));
+void CollectPythonFiles(const Discovered& d, const std::string& outDir, DumpStats* st) {
+    if (d.dataDir.empty() || !IsDir(d.dataDir)) return;
+    const std::string pyOut = Join(outDir, "python");
+    Walk(d.dataDir, "", 0, [&](const std::string& abs, const std::string& rel) {
+        if (st->pyFiles >= kMaxPyFiles || st->pyBytes >= kMaxPyBytes) return;
+        if (!LooksLikePythonFile(BaseName(abs))) return;
+        const long long size = FileSize(abs);
+        if (size <= 0) return;
+        const std::string dst = Join(pyOut, rel);
+        if (!MakeDirs(DirName(dst))) return;
+        if (!CopyFile(abs, dst)) return;
+        st->pyFiles++;
+        st->pyBytes += size;
+    });
 }
 
-// The interpreter lives inside the game's own libraries; try the game libs
-// first, then fall back to a global lookup (the lib is already loaded by then).
-PyApi ResolvePython(const std::string& nativeLibDir) {
-    PyApi api;
+void CollectPythonLibs(const Discovered& d, const std::string& outDir, PyFinding* py,
+                       DumpStats* st) {
+    if (d.libDir.empty() || !IsDir(d.libDir)) return;
+    const std::string libOut = Join(outDir, "libs");
 
-    const char* candidates[] = {
-        "libGame.so",
-        "libpython3.11.so",
-        "libpython3.11m.so",
-        "libpython3.so",
-        "libmain.so",
-    };
+    // Scan every .so below the sandbox lib dir; the interpreter is statically
+    // linked into one of them (libGame.so for this title).
+    std::vector<std::string> candidates;
+    Walk(d.libDir, "", 0, [&](const std::string& abs, const std::string&) {
+        if (EndsWith(BaseName(abs), ".so")) candidates.push_back(abs);
+    });
+    LOGI("lib scan: %zu candidates", candidates.size());
 
-    for (const char* name : candidates) {
-        const std::string path = nativeLibDir + "/" + name;
-        if (!Exists(path)) continue;
-
-        void* handle = dlopen(path.c_str(), RTLD_NOW | RTLD_NOLOAD);
-        if (handle == nullptr) handle = dlopen(path.c_str(), RTLD_NOW | RTLD_LOCAL);
-        if (handle == nullptr) continue;
-
-        Resolve(handle, "Py_GetVersion", api.get_version);
-        if (api.get_version != nullptr) {
-            api.handle = handle;
-            LOGI("CPython symbols found in %s", name);
-            break;
+    for (const std::string& so : candidates) {
+        PyFinding local;
+        if (!ScanBinaryForPython(so, &local)) continue;
+        if (py->version.empty() && !local.version.empty()) {
+            py->version = local.version;
+            py->source = local.source;
         }
-        dlclose(handle);
-    }
+        py->sawCpython = py->sawCpython || local.sawCpython;
+        if (py->version.empty() && !local.sawCpython) continue;
 
-    // Nothing in the lib dir: maybe it is mapped under another soname.
-    if (api.get_version == nullptr) {
-        void* self = dlopen(nullptr, RTLD_NOW);
-        if (self != nullptr) Resolve(self, "Py_GetVersion", api.get_version);
-        if (api.get_version != nullptr) {
-            api.handle = self;
-            LOGI("CPython symbols found in the global namespace");
+        const long long size = FileSize(so);
+        if (size <= 0 || size > kMaxSingleLibBytes) {
+            LOGW("lib too large to copy (%lld): %s",
+                 static_cast<long long>(size), BaseName(so).c_str());
+            continue;
         }
+        if (st->libBytes + size > kMaxLibBytes) continue;
+        if (!MakeDirs(libOut)) continue;
+        const std::string dst = Join(libOut, BaseName(so));
+        if (!CopyFile(so, dst)) continue;
+        st->libs++;
+        st->libBytes += size;
     }
-
-    if (api.get_version == nullptr) return api;
-
-    void* handle = api.handle;
-    Resolve(handle, "Py_IsInitialized", api.is_initialized);
-    Resolve(handle, "PyGILState_Ensure", api.gil_ensure);
-    Resolve(handle, "PyGILState_Release", api.gil_release);
-    Resolve(handle, "PyRun_SimpleString", api.run_simple_string);
-    Resolve(handle, "Py_GetPath", api.get_path);
-    Resolve(handle, "Py_GetPrefix", api.get_prefix);
-    Resolve(handle, "Py_GetProgramName", api.get_program_name);
-
-    return api;
 }
 
-// Last resort: scrape a "Python 3.11.2" banner out of a library binary.
-std::string ScanVersionBanner(const std::string& nativeLibDir) {
-    const char* names[] = {"libGame.so", "libpython3.11.so", "libpython3.so"};
-    for (const char* name : names) {
-        const std::string path = nativeLibDir + "/" + name;
-        const std::string blob = ReadTextFile(path, 32u << 20);
-        if (blob.empty()) continue;
+std::string BuildManifest(const Discovered& d, const PyFinding& py,
+                          const DumpStats& st, const std::string& outDir) {
+    std::string j = "{\n";
+    j += "  \"generated_by\": \"libbs_dumper\",\n";
+    j += "  \"pid\": " + std::to_string(getpid()) + ",\n";
+    j += "  \"process\": " + JsonStr(d.process) + ",\n";
+    j += "  \"package\": " + JsonStr(d.pkg) + ",\n";
+    j += "  \"sandbox_root\": " + JsonStr(d.root) + ",\n";
+    j += "  \"apk\": " + JsonStr(d.apkPath) + ",\n";
+    j += "  \"app_dir\": " + JsonStr(d.appDir) + ",\n";
+    j += "  \"native_lib_dir\": " + JsonStr(d.libDir) + ",\n";
+    j += "  \"data_dir\": " + JsonStr(d.dataDir) + ",\n";
+    j += "  \"output_dir\": " + JsonStr(outDir) + ",\n";
+    j += "  \"python\": {\n";
+    j += "    \"version\": " + JsonStr(py.version) + ",\n";
+    j += "    \"version_source\": " + JsonStr(py.source) + ",\n";
+    j += "    \"cpython_string_found\": " + std::string(py.sawCpython ? "true" : "false") +
+         "\n";
+    j += "  },\n";
+    j += "  \"copied\": {\n";
+    j += "    \"python_files\": " + std::to_string(st.pyFiles) + ",\n";
+    j += "    \"python_bytes\": " + std::to_string(st.pyBytes) + ",\n";
+    j += "    \"libs\": " + std::to_string(st.libs) + ",\n";
+    j += "    \"lib_bytes\": " + std::to_string(st.libBytes) + "\n";
+    j += "  },\n";
+    j += "  \"loaded_modules\": [\n";
+    for (size_t i = 0; i < d.modules.size(); ++i) {
+        j += "    " + JsonStr(d.modules[i]);
+        if (i + 1 < d.modules.size()) j += ",";
+        j += "\n";
+    }
+    j += "  ]\n}\n";
+    return j;
+}
 
-        const std::string needle = "Python 3.";
-        const size_t at = blob.find(needle);
-        if (at == std::string::npos) continue;
+void RunDump(const std::string& outDir) {
+    LOGI("dump start: out=%s", outDir.c_str());
+    if (!MakeDirs(outDir)) {
+        LOGE("dump: cannot create %s", outDir.c_str());
+        return;
+    }
 
-        std::string version;
-        for (size_t i = at + needle.size() - 2;
-             i < blob.size() && version.size() < 16; ++i) {
-            const char c = blob[i];
-            if ((c >= '0' && c <= '9') || c == '.') {
-                version += c;
-            } else {
-                break;
+    Discovered d = Discover();
+    if (d.appDir.empty()) {
+        // Nothing to point at: leave a breadcrumb so the user can see why.
+        WriteText(Join(outDir, "env.json"),
+                  "{\n  \"error\": \"sandbox layout not found in /proc/self/maps\"\n}\n");
+        LOGE("dump: sandbox layout not found");
+        return;
+    }
+
+    // Raw maps snapshot — cheap and the most useful forensic artifact.
+    std::string maps;
+    if (ReadWhole("/proc/self/maps", &maps)) {
+        WriteText(Join(outDir, "maps.txt"), maps);
+    }
+
+    PyFinding py;
+    DumpStats st;
+    CollectPythonLibs(d, outDir, &py, &st);
+    CollectPythonFiles(d, outDir, &st);
+
+    WriteText(Join(outDir, "env.json"), BuildManifest(d, py, st, outDir));
+    LOGI("dump done: py=%d (%lld B) libs=%d (%lld B) python=%s",
+         st.pyFiles, static_cast<long long>(st.pyBytes), st.libs,
+         static_cast<long long>(st.libBytes),
+         py.version.empty() ? "<unknown>" : py.version.c_str());
+}
+
+// ---------------------------------------------------------------- worker
+
+void* WorkerMain(void*) {
+    prctl(PR_SET_NAME, "bs-sdk-dumper", 0, 0, 0);
+
+    std::string outDir;
+    {
+        pthread_mutex_lock(&gLock);
+        if (!gArmed) {
+            // Wait for Java to hand us the Downloads path. Loading the library
+            // without arming it (checkbox off) means we simply time out.
+            struct timespec deadline {};
+            clock_gettime(CLOCK_REALTIME, &deadline);
+            deadline.tv_sec += kConfigTimeoutSec;
+            while (!gArmed) {
+                if (pthread_cond_timedwait(&gCond, &gLock, &deadline) != 0) break;
             }
         }
-        // "3.11.2" -> keep it only if it looks like a real version
-        if (version.size() >= 3) return version;
+        if (gArmed) outDir = gOutDir;
+        pthread_mutex_unlock(&gLock);
     }
-    return {};
-}
 
-// Python-side extraction. Writes the environment description and copies the
-// importable trees that the game actually uses.
-std::string BuildExtractScript(const std::string& outDir) {
-    std::string script;
-    script += "import os, sys, json, shutil\n";
-    script += "out = r'''" + outDir + "'''\n";
-    script += "os.makedirs(out, exist_ok=True)\n";
-    script += "info = {\n";
-    script += "  'version': sys.version,\n";
-    script += "  'version_info': list(sys.version_info[:3]),\n";
-    script += "  'executable': getattr(sys, 'executable', None),\n";
-    script += "  'prefix': getattr(sys, 'prefix', None),\n";
-    script += "  'base_prefix': getattr(sys, 'base_prefix', None),\n";
-    script += "  'exec_prefix': getattr(sys, 'exec_prefix', None),\n";
-    script += "  'platform': sys.platform,\n";
-    script += "  'byteorder': sys.byteorder,\n";
-    script += "  'maxsize': getattr(sys, 'maxsize', None),\n";
-    script += "  'path': list(sys.path),\n";
-    script += "  'modules': sorted(sys.modules.keys()),\n";
-    script += "}\n";
-    script += "with open(os.path.join(out, 'python_env.json'), 'w') as fh:\n";
-    script += "  json.dump(info, fh, indent=2)\n";
-    script += "copied = []\n";
-    script += "for entry in list(sys.path):\n";
-    script += "  if not entry or not os.path.isdir(entry):\n";
-    script += "    continue\n";
-    script += "  base = os.path.basename(entry.rstrip('/')) or 'root'\n";
-    script += "  dest = os.path.join(out, 'modules', base)\n";
-    script += "  try:\n";
-    script += "    if os.path.exists(dest):\n";
-    script += "      continue\n";
-    script += "    shutil.copytree(entry, dest,\n";
-    script += "      ignore=shutil.ignore_patterns('__pycache__', '*.pyc'))\n";
-    script += "    copied.append({'src': entry, 'dst': dest})\n";
-    script += "  except Exception as exc:\n";
-    script += "    copied.append({'src': entry, 'error': str(exc)})\n";
-    script += "with open(os.path.join(out, 'modules.json'), 'w') as fh:\n";
-    script += "  json.dump(copied, fh, indent=2)\n";
-    script += "print('bs-dumper: sdk written to', out)\n";
-    return script;
-}
-
-// ------------------------------------------------------------ the natives
-
-std::string DirOf(const std::string& path) {
-    const size_t slash = path.find_last_of('/');
-    return slash == std::string::npos ? std::string() : path.substr(0, slash);
-}
-
-std::string BaseOf(const std::string& path) {
-    const size_t slash = path.find_last_of('/');
-    return slash == std::string::npos ? path : path.substr(slash + 1);
-}
-
-// Locates stdlib archives/dirs shipped beside the game libraries or in its data
-// directory, so path (2) of the dumper still produces something usable.
-std::vector<std::string> FindStdlibRoots(const std::string& nativeLibDir,
-                                         const std::string& dataDir,
-                                         const std::string& sourceDir) {
-    std::vector<std::string> roots;
-    const std::string bases[] = {nativeLibDir, dataDir, DirOf(sourceDir),
-                                 dataDir + "/files", dataDir + "/app_python"};
-
-    for (const std::string& base : bases) {
-        if (base.empty()) continue;
-        for (const std::string& name : ListDir(base)) {
-            const std::string full = base + "/" + name;
-            const bool looksPython = EndsWith(name, ".zip") &&
-                                     name.find("python") != std::string::npos;
-            const bool isStdlibDir = IsDir(full) &&
-                                     (name == "python3.11" || name == "stdlib" ||
-                                      name == "site-packages" || name == "python");
-            if (looksPython || isStdlibDir) roots.push_back(full);
-        }
+    if (outDir.empty()) {
+        LOGW("worker: never configured, nothing dumped");
+        return nullptr;
     }
-    return roots;
+    RunDump(outDir);
+    return nullptr;
+}
+
+void StartWorkerLocked() {
+    if (gThreadStarted) return;
+    gThreadStarted = true;
+    pthread_t tid;
+    if (pthread_create(&tid, nullptr, WorkerMain, nullptr) == 0) {
+        pthread_detach(tid);
+        LOGI("worker thread started");
+    } else {
+        gThreadStarted = false;
+        LOGE("worker thread failed to start");
+    }
 }
 
 }  // namespace
 
-extern "C" {
+// ---------------------------------------------------------------- jni
 
-JNIEXPORT jboolean JNICALL
-Java_top_niunaijun_blackboxa_util_PySdkDumper_nativeDetect(
-        JNIEnv* env, jobject /*thiz*/,
-        jstring jNativeLibDir, jstring /*jDataDir*/, jstring /*jSourceDir*/) {
-
-    const std::string nativeLibDir = JStr(env, jNativeLibDir);
-    const PyApi api = ResolvePython(nativeLibDir);
-
-    if (api.HasInterpreter()) {
-        const char* version = api.get_version();
-        LOGI("detect: interpreter found (%s), live=%d",
-             version != nullptr ? version : "?", api.IsLive() ? 1 : 0);
-        return JNI_TRUE;
-    }
-
-    const std::string banner = ScanVersionBanner(nativeLibDir);
-    if (!banner.empty()) {
-        LOGI("detect: version banner %s (entry points not resolvable yet)",
-             banner.c_str());
-        return JNI_TRUE;
-    }
-
-    LOGW("detect: no CPython runtime in %s", nativeLibDir.c_str());
-    return JNI_FALSE;
+extern "C" JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void*) {
+    gVm = vm;  // cached for completeness; the worker makes no Java calls
+    LOGI("JNI_OnLoad: arming worker");
+    pthread_mutex_lock(&gLock);
+    StartWorkerLocked();
+    pthread_mutex_unlock(&gLock);
+    return JNI_VERSION_1_6;
 }
 
-JNIEXPORT jstring JNICALL
-Java_top_niunaijun_blackboxa_util_PySdkDumper_nativeVersion(
-        JNIEnv* env, jobject /*thiz*/) {
-
-    void* self = dlopen(nullptr, RTLD_NOW);
-    PyApi probe{};
-    if (self != nullptr) Resolve(self, "Py_GetVersion", probe.get_version);
-
-    if (probe.get_version == nullptr) {
-        return env->NewStringUTF("");
+// The only Java -> native call: hand over the resolved output directory.
+// Java loads this library (System.loadLibrary) only while the dumper checkbox
+// is on, and only inside the guest process, so reaching here already means
+// "dump this process".
+extern "C" JNIEXPORT jboolean JNICALL
+Java_top_niunaijun_blackboxa_util_PySdkDumper_nativeStart(
+        JNIEnv* env, jobject /*thiz*/, jstring outDir) {
+    const std::string dir = JStr(env, outDir);
+    if (dir.empty()) {
+        LOGE("nativeStart: empty output dir");
+        return JNI_FALSE;
     }
-
-    const char* raw = probe.get_version();
-    if (raw == nullptr) return env->NewStringUTF("");
-
-    // "3.11.2 (main, ...)" -> "3.11.2"
-    std::string version;
-    for (const char* p = raw; *p != '\0' && version.size() < 16; ++p) {
-        if ((*p >= '0' && *p <= '9') || *p == '.') {
-            version += *p;
-        } else {
-            break;
-        }
-    }
-    return env->NewStringUTF(version.c_str());
+    pthread_mutex_lock(&gLock);
+    gOutDir = dir;
+    gArmed = true;
+    StartWorkerLocked();
+    pthread_cond_signal(&gCond);
+    pthread_mutex_unlock(&gLock);
+    LOGI("nativeStart: out=%s", dir.c_str());
+    return JNI_TRUE;
 }
-
-JNIEXPORT jstring JNICALL
-Java_top_niunaijun_blackboxa_util_PySdkDumper_nativeDump(
-        JNIEnv* env, jobject /*thiz*/,
-        jstring jOutDir, jstring jNativeLibDir,
-        jstring jDataDir, jstring jSourceDir) {
-
-    const std::string outDir = JStr(env, jOutDir);
-    const std::string nativeLibDir = JStr(env, jNativeLibDir);
-    const std::string dataDir = JStr(env, jDataDir);
-    const std::string sourceDir = JStr(env, jSourceDir);
-
-    if (outDir.empty()) {
-        LOGE("dump: no output directory");
-        return env->NewStringUTF("");
-    }
-    if (!EnsureDir(outDir)) {
-        LOGE("dump: cannot create %s", outDir.c_str());
-        return env->NewStringUTF("");
-    }
-
-    gCopiedFiles = 0;
-    const PyApi api = ResolvePython(nativeLibDir);
-
-    bool scriptRan = false;
-    if (api.HasInterpreter() && api.IsLive() && api.run_simple_string != nullptr) {
-        void* gil = (api.gil_ensure != nullptr) ? api.gil_ensure() : nullptr;
-        const std::string script = BuildExtractScript(outDir);
-        const std::string scriptPath = outDir + "/.bs_extract.py";
-        if (WriteFile(scriptPath, script)) {
-            LOGI("dump: running in-process extractor");
-            const std::string call = "exec(open(r'''" + scriptPath + "''').read())";
-            scriptRan = api.run_simple_string(call.c_str()) == 0;
-            unlink(scriptPath.c_str());
-        }
-        if (gil != nullptr && api.gil_release != nullptr) api.gil_release(gil);
-    }
-
-    // Always emit a manifest describing what we could see from here.
-    const std::vector<std::string> roots =
-            FindStdlibRoots(nativeLibDir, dataDir, sourceDir);
-
-    std::string manifest;
-    manifest += "{\n";
-    manifest += "  \"generated_by\": \"bs-dumper\",\n";
-    manifest += "  \"package_source\": \"" + JsonEscape(BaseOf(sourceDir)) + "\",\n";
-    manifest += "  \"native_lib_dir\": \"" + JsonEscape(nativeLibDir) + "\",\n";
-    manifest += "  \"data_dir\": \"" + JsonEscape(dataDir) + "\",\n";
-    manifest += "  \"interpreter_live\": ";
-    manifest += (api.HasInterpreter() && api.IsLive()) ? "true,\n" : "false,\n";
-    manifest += "  \"in_process_extract\": ";
-    manifest += scriptRan ? "true,\n" : "false,\n";
-
-    std::string version;
-    if (api.HasInterpreter() && api.get_version() != nullptr) {
-        version = api.get_version();
-    } else {
-        version = ScanVersionBanner(nativeLibDir);
-    }
-    manifest += "  \"python_version\": \"" + JsonEscape(version) + "\",\n";
-
-    if (api.get_prefix != nullptr) {
-        const char* prefix = api.get_prefix();
-        if (prefix != nullptr) {
-            manifest += "  \"prefix\": \"" + JsonEscape(prefix) + "\",\n";
-        }
-    }
-    if (api.get_path != nullptr) {
-        const char* path = api.get_path();
-        if (path != nullptr) {
-            manifest += "  \"sys_path_raw\": \"" + JsonEscape(path) + "\",\n";
-        }
-    }
-
-    manifest += "  \"stdlib_roots\": [";
-    for (size_t i = 0; i < roots.size(); ++i) {
-        manifest += (i == 0 ? "\n" : ",\n");
-        manifest += "    \"" + JsonEscape(roots[i]) + "\"";
-    }
-    manifest += roots.empty() ? "],\n" : "\n  ],\n";
-
-    manifest += "  \"native_libraries\": [";
-    bool firstLib = true;
-    for (const std::string& name : ListDir(nativeLibDir)) {
-        if (!EndsWith(name, ".so")) continue;
-        manifest += firstLib ? "\n" : ",\n";
-        firstLib = false;
-        manifest += "    \"" + JsonEscape(name) + "\"";
-    }
-    manifest += firstLib ? "]\n" : "\n  ]\n";
-    manifest += "}\n";
-
-    WriteFile(outDir + "/sdk_manifest.json", manifest);
-
-    // Copy the stdlib roots we found (archive or directory) when the live
-    // extractor could not run — that is what makes the SDK portable.
-    if (!scriptRan) {
-        for (const std::string& root : roots) {
-            const std::string dest = outDir + "/modules/" + BaseOf(root);
-            if (IsDir(root)) {
-                CopyTree(root, dest);
-            } else {
-                CopyFileRaw(root, dest);
-            }
-        }
-    }
-
-    LOGI("dump: finished (%zu files copied) -> %s", gCopiedFiles, outDir.c_str());
-
-    std::string report;
-    report += "bs-dumper report\n";
-    report += "output:            " + outDir + "\n";
-    report += "python version:    " + version + "\n";
-    report += "interpreter live:  ";
-    report += (api.HasInterpreter() && api.IsLive()) ? "yes\n" : "no\n";
-    report += "in-process dump:   ";
-    report += scriptRan ? "yes\n" : "no\n";
-    report += "files copied:      " + std::to_string(gCopiedFiles) + "\n";
-    report += "stdlib roots:      " + std::to_string(roots.size()) + "\n";
-    WriteFile(outDir + "/REPORT.txt", report);
-
-    return env->NewStringUTF(outDir.c_str());
-}
-
-}  // extern "C"

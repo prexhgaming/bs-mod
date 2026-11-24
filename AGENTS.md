@@ -23,10 +23,12 @@
 ## Python SDK dumper
 - Target game is a **CPython 3.11.2** title whose interpreter is statically linked into **`libGame.so`** (the splits ship no standalone `libpython*.so`). Its `Resources.mpk` is a **zstd-compressed tar** (`237MPTZSTD1` magic + `28 B5 2F FD` frame).
 - Native: `app/src/main/cpp/sdk_dumper.cpp` → `libbs_dumper.so`, built by `app/src/main/cpp/CMakeLists.txt` via `android.externalNativeBuild.cmake` in `app/build.gradle` (top-level `android {}` block, **not** inside `buildFeatures {}`).
-- Bridge: `app/.../util/PySdkDumper.kt`. JNI names must stay `Java_top_niunaijun_blackboxa_util_PySdkDumper_native{Detect,Dump,Version}` (member `external fun` in a Kotlin `object` ⇒ `jobject`, not `jclass`).
-- Toggle: checkable "More" menu item `action_dump_sdk`, persisted in SharedPreferences `bs_dumper` / `sdk_dumper_enabled`. Output goes to `/storage/emulated/0/Download/<game-pkg>/sdk`.
-- Per-process load: `App.onCreate` calls `System.loadLibrary("bs_dumper")` + `PySdkDumper.autoDumpOnStart()`. Inside the sandboxed game process `context.applicationInfo` **is the game's**, which is how the dumper locates the game's native-lib/data/source dirs.
-- `requestLegacyExternalStorage="true"` is required to write the Downloads folder on API 29+.
+- Bridge: `app/.../util/PySdkDumper.kt`. Only JNI entry point is `Java_top_niunaijun_blackboxa_util_PySdkDumper_nativeStart(String outDir)` (member `external fun` in a Kotlin `object` ⇒ `jobject`, not `jclass`). Java passes **only** the Downloads path — everything else is discovered natively.
+- Toggle: checkable "More" menu item `action_dump_sdk`, persisted in SharedPreferences `bs_dumper_prefs` / `sdk_dumper_enabled`. The toggle only arms the dumper; the dump runs on the **next game launch**. Output goes to `/storage/emulated/0/Download/<game-pkg>/sdk` (`env.json`, `maps.txt`, `python/`, `libs/`).
+- **Trigger**: `JNI_OnLoad` spawns a worker thread that waits for the output dir; `nativeStart()` unblocks it. The lib is loaded from the **guest lifecycle hook** (`BlackBoxLoader.afterApplicationOnCreate`, package must equal `GameTarget.PACKAGE_NAME`) — not from `App.onCreate`, which runs in the *host* process and therefore only ever sees the launcher's own dirs.
+- Native discovery (no dirs passed from Java): parse `/proc/self/maps` for `<sandbox-root>/data/app/<pkg>/base.apk` → `appDir`, `libDir = appDir/lib`, then `dataDir = <sandbox-root>/data/user/<uid>/<pkg>`. Sandbox root is `<host-data>/blackbox` (`BEnvironment`).
+- Python is found by scanning **every** `.so` in `libDir` in 8 MB chunks for the `Py_GetVersion` banner (`3.x.y (`) — do **not** cap the scan (`libGame.so` is ~84 MB and the scanner is prefix-anchored, so a cap silently misses it).
+- Downloads writes: API 23-29 use `WRITE_EXTERNAL_STORAGE` (`maxSdkVersion="29"`) plus `requestLegacyExternalStorage`; API 30+ use `MANAGE_EXTERNAL_STORAGE` ("All files access"), checked via `Environment.isExternalStorageManager()`. Ticking the dumper checkbox deep-links to `ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION` (there is no runtime dialog); without the grant the dump falls back to app-private storage.
 - Uploaded game splits (`split_config.*.apk`, `Resources.mpk`) are gitignored — reference material, not project source.
 
 ## Toolchain

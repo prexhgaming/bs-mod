@@ -218,11 +218,21 @@ class GameRepository {
         }
     }.getOrNull()
 
-    /** Label of the target game, falling back to the hard-coded display name. */
+    /** Label of the target game, read from the package manager (sandbox first). */
     fun gameLabel(): String = runCatching {
-        val host = hostGameInfo() ?: return@runCatching GameTarget.DISPLAY_NAME
-        App.getContext().packageManager.getApplicationLabel(host).toString()
-    }.getOrNull()?.takeIf { it.isNotBlank() } ?: GameTarget.DISPLAY_NAME
+        val sandboxInfo = sandboxGameInfo()
+        if (sandboxInfo != null) {
+            runCatching {
+                BlackBoxCore.getPackageManager().getApplicationLabel(sandboxInfo).toString()
+            }.getOrNull()
+        } else {
+            hostGameInfo()?.let { info ->
+                runCatching {
+                    App.getContext().packageManager.getApplicationLabel(info).toString()
+                }.getOrNull()
+            }
+        }
+    }.getOrNull()?.takeIf { it.isNotBlank() } ?: GameTarget.displayName()
 
     private fun sandboxGameInfo(): ApplicationInfo? = runCatching {
         BlackBoxCore.get().getInstalledApplications(0, GameTarget.USER_ID)

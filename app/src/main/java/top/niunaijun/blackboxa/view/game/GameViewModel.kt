@@ -31,7 +31,7 @@ class GameViewModel(private val repo: GameRepository) : ViewModel() {
     private val _gameIcon = MutableLiveData<Drawable?>()
     val gameIcon: LiveData<Drawable?> = _gameIcon
 
-    private val _gameLabel = MutableLiveData(GameTarget.DISPLAY_NAME)
+    private val _gameLabel = MutableLiveData(GameTarget.displayName())
     val gameLabel: LiveData<String> = _gameLabel
 
     /** Provisioning step currently running, used for the progress label. */
@@ -74,7 +74,10 @@ class GameViewModel(private val repo: GameRepository) : ViewModel() {
             loadIdentity()
 
             if (result.importedNow) {
-                _message.value = getString(R.string.message_game_ready, GameTarget.DISPLAY_NAME)
+                _message.value = getString(
+                    R.string.message_game_ready,
+                    _gameLabel.value ?: GameTarget.PACKAGE_NAME
+                )
             }
         }
     }
