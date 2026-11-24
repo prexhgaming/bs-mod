@@ -49,21 +49,7 @@ class GameRepository {
             )
         }
 
-        // 1. GMS first: the game expects Play services to be present at launch.
-        if (gmsSupported && !gmsInstalled) {
-            onStage(Stage.GMS)
-            val result = runCatching {
-                BlackBoxCore.get().installGms(GameTarget.USER_ID)
-            }.getOrNull()
-            gmsInstalled = isGmsInstalled()
-            if (result == null || !result.success) {
-                Log.w(TAG, "GMS import failed: ${result?.msg}")
-            } else {
-                Log.i(TAG, "GMS imported into user ${GameTarget.USER_ID}")
-            }
-        }
-
-        // 2. Clone the game straight from the copy installed on the device.
+        // 1. Clone the game first — it must be present in the sandbox before GMS.
         if (gameOnDevice && !gameInSandbox) {
             onStage(Stage.GAME)
             val result = runCatching {
@@ -76,6 +62,20 @@ class GameRepository {
             } else {
                 importedNow = true
                 Log.i(TAG, "Game imported into user ${GameTarget.USER_ID}")
+            }
+        }
+
+        // 2. GMS after the game is installed, so Play services are ready for it.
+        if (gmsSupported && !gmsInstalled) {
+            onStage(Stage.GMS)
+            val result = runCatching {
+                BlackBoxCore.get().installGms(GameTarget.USER_ID)
+            }.getOrNull()
+            gmsInstalled = isGmsInstalled()
+            if (result == null || !result.success) {
+                Log.w(TAG, "GMS import failed: ${result?.msg}")
+            } else {
+                Log.i(TAG, "GMS imported into user ${GameTarget.USER_ID}")
             }
         }
 

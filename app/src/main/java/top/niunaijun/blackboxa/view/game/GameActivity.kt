@@ -73,7 +73,10 @@ class GameActivity : AppCompatActivity() {
         super.onResume()
         val status = viewModel.status.value
         // Coming back after installing the game? Import it right away.
-        if (status != null && !status.busy && !status.needsApk && !status.gameInSandbox) {
+        // Only retry when the game is actually on the host device; otherwise we
+        // would spin in an endless provision loop.
+        if (status != null && !status.busy && !status.needsApk && !status.gameInSandbox
+            && status.gameOnDevice) {
             viewModel.provision(force = true)
         } else {
             viewModel.refresh()
