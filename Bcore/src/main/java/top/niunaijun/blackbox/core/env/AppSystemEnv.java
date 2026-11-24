@@ -9,18 +9,11 @@ import java.util.List;
 import top.niunaijun.blackbox.BlackBoxCore;
 import top.niunaijun.blackbox.utils.compat.BuildCompat;
 
-/**
- * updated by alex5402 on 4/21/21.
- * * ∧＿∧
- * (`･ω･∥
- * 丶　つ０
- * しーＪ
- * TFNQw5HgWUS33Ke1eNmSFTwoQySGU7XNsK (USDT TRC20)
- */
+
 public class AppSystemEnv {
     private static final List<String> sSystemPackages = new ArrayList<>();
     private static final List<String> sSuPackages = new ArrayList<>();
-    private static final List<String> sXposedPackages = new ArrayList<>();
+
     private static final List<String> sPreInstallPackages = new ArrayList<>();
 
     static {
@@ -34,17 +27,22 @@ public class AppSystemEnv {
         sSystemPackages.add("com.android.talkback");
         sSystemPackages.add("com.miui.gallery");
 
-        // google Gboard
+        
         sSystemPackages.add("com.google.android.inputmethod.latin");
-        // sSystemPackages.add(BlackBoxCore.getHostPkg());
 
-        // 华为
+        // Samsung Health sign-in falls back to Samsung Account or a browser.
+        sSystemPackages.add("com.osp.app.signin");
+        sSystemPackages.add("com.sec.android.app.sbrowser");
+        sSystemPackages.add("com.android.chrome");
+        
+
+        
         sSystemPackages.add("com.huawei.webview");
 
-        // oppo
+        
         sSystemPackages.add("com.coloros.safecenter");
 
-        // su
+        
         sSuPackages.add("com.noshufou.android.su");
         sSuPackages.add("com.noshufou.android.su.elite");
         sSuPackages.add("eu.chainfire.supersu");
@@ -52,11 +50,11 @@ public class AppSystemEnv {
         sSuPackages.add("com.thirdparty.superuser");
         sSuPackages.add("com.yellowes.su");
 
-        sXposedPackages.add("de.robv.android.xposed.installer");
 
-        // sPreInstallPackages.add("com.huawei.hwid");
+
+        
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && Build.VERSION.SDK_INT < 29){
-            //解决Android 9三星浏览器闪退问题
+            
         }else{
 
         }
@@ -72,8 +70,6 @@ public class AppSystemEnv {
 
     public static boolean isBlackPackage(String packageName) {
         if (BlackBoxCore.get().isHideRoot() && sSuPackages.contains(packageName)) {
-            return true;
-        } else if (BlackBoxCore.get().isHideXposed() && sXposedPackages.contains(packageName)) {
             return true;
         }
         return false;

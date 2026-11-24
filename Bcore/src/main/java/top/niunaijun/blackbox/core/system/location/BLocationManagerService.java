@@ -14,10 +14,10 @@ import java.io.InputStream;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 
-import black.android.location.BRILocationListener;
 import black.android.location.BRILocationListenerStub;
 import top.niunaijun.blackbox.BlackBoxCore;
 import top.niunaijun.blackbox.core.env.BEnvironment;
@@ -26,25 +26,19 @@ import top.niunaijun.blackbox.entity.location.BCell;
 import top.niunaijun.blackbox.entity.location.BLocation;
 import top.niunaijun.blackbox.entity.location.BLocationConfig;
 import top.niunaijun.blackbox.fake.frameworks.BLocationManager;
+import top.niunaijun.blackbox.utils.compat.LocationListenerCompat;
 import top.niunaijun.blackbox.utils.CloseUtils;
-import top.niunaijun.blackbox.utils.FileUtils;
+import top.niunaijun.blackbox.utils.BzFileUtils;
 import top.niunaijun.blackbox.utils.Slog;
 
-/**
- * Fake location
- * plan1: only GPS invocation is valid and other methods like addressed by cells are intercepted at all.
- * plan2: mock fake neighboring cells from LBS database and modify the result of GPS invocation.
- * plan3: cheat internal application at being given permission to access location information but get data from BB.
- * the final testing condition requires UI demo.
- * Created by BlackBoxing on 3/8/22.
- **/
+
 public class BLocationManagerService extends IBLocationManagerService.Stub implements ISystemService {
     public static final String TAG = "BLocationManagerService";
 
     private static final BLocationManagerService sService = new BLocationManagerService();
     private final SparseArray<HashMap<String, BLocationConfig>> mLocationConfigs = new SparseArray<>();
     private final BLocationConfig mGlobalConfig = new BLocationConfig();
-    private final Map<IBinder, LocationRecord> mLocationListeners = new HashMap<>();
+    private final Map<IBinder, LocationRecord> mLocationListeners = new ConcurrentHashMap<>();
     private final Executor mThreadPool = Executors.newCachedThreadPool();
 
     public static BLocationManagerService get() {
@@ -178,6 +172,7 @@ public class BLocationManagerService extends IBLocationManagerService.Stub imple
         synchronized (mLocationConfigs) {
             getOrCreateConfig(userId, pkg).location = location;
             save();
+            Slog.i(TAG, "setLocation userId=" + userId + " pkg=" + pkg + " loc=" + (location != null ? location.toString() : "null"));
         }
     }
 
@@ -200,6 +195,7 @@ public class BLocationManagerService extends IBLocationManagerService.Stub imple
         synchronized (mGlobalConfig) {
             mGlobalConfig.location = location;
             save();
+            Slog.i(TAG, "setGlobalLocation loc=" + (location != null ? location.toString() : "null"));
         }
     }
 
@@ -244,11 +240,21 @@ public class BLocationManagerService extends IBLocationManagerService.Stub imple
             while (locationListener.pingBinder()) {
                 IInterface iInterface = BRILocationListenerStub.get().asInterface(locationListener);
                 LocationRecord locationRecord = mLocationListeners.get(locationListener);
-                if (locationRecord == null)
+                if (locationRecord == null) {
+                    try {
+                        Thread.sleep(250);
+                    } catch (InterruptedException ignored) {
+                    }
                     continue;
+                }
                 BLocation location = getLocation(locationRecord.userId, locationRecord.packageName);
-                if (location == null)
+                if (location == null) {
+                    try {
+                        Thread.sleep(250);
+                    } catch (InterruptedException ignored) {
+                    }
                     continue;
+                }
                 if (location.equals(lastLocation) && (System.currentTimeMillis() - l) < 3000) {
                     try {
                         Thread.sleep(1000);
@@ -258,7 +264,8 @@ public class BLocationManagerService extends IBLocationManagerService.Stub imple
                 }
                 lastLocation = location;
                 l = System.currentTimeMillis();
-                BlackBoxCore.get().getHandler().post(() -> BRILocationListener.get(iInterface).onLocationChanged(location.convert2SystemLocation()));
+                final Object listener = iInterface;
+                BlackBoxCore.get().getHandler().post(() -> LocationListenerCompat.dispatchLocationChanged(listener, location.convert2SystemLocation()));
             }
         });
     }
@@ -281,7 +288,7 @@ public class BLocationManagerService extends IBLocationManagerService.Stub imple
                     }
                     parcel.setDataPosition(0);
                     fileOutputStream = atomicFile.startWrite();
-                    FileUtils.writeParcelToOutput(parcel, fileOutputStream);
+                    BzFileUtils.writeParcelToOutput(parcel, fileOutputStream);
                     atomicFile.finishWrite(fileOutputStream);
                 } catch (Throwable e) {
                     e.printStackTrace();
@@ -303,7 +310,7 @@ public class BLocationManagerService extends IBLocationManagerService.Stub imple
                 return;
             }
             is = new FileInputStream(BEnvironment.getFakeLocationConf());
-            byte[] bytes = FileUtils.toByteArray(is);
+            byte[] bytes = BzFileUtils.toByteArray(is);
             parcel.unmarshall(bytes, 0, bytes.length);
             parcel.setDataPosition(0);
 
@@ -324,7 +331,7 @@ public class BLocationManagerService extends IBLocationManagerService.Stub imple
         } catch (Exception e) {
             e.printStackTrace();
             Slog.d(TAG, "bad config");
-            FileUtils.deleteDir(BEnvironment.getFakeLocationConf());
+            BzFileUtils.deleteDir(BEnvironment.getFakeLocationConf());
         } finally {
             parcel.recycle();
             CloseUtils.close(is);

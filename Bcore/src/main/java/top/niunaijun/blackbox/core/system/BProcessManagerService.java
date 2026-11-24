@@ -27,20 +27,13 @@ import top.niunaijun.blackbox.core.system.pm.BPackageManagerService;
 import top.niunaijun.blackbox.core.system.user.BUserHandle;
 import top.niunaijun.blackbox.entity.AppConfig;
 import top.niunaijun.blackbox.proxy.ProxyManifest;
-import top.niunaijun.blackbox.utils.FileUtils;
+import top.niunaijun.blackbox.utils.BzFileUtils;
 import top.niunaijun.blackbox.utils.Slog;
 import top.niunaijun.blackbox.utils.compat.ApplicationThreadCompat;
 import top.niunaijun.blackbox.utils.compat.BundleCompat;
 import top.niunaijun.blackbox.utils.provider.ProviderCall;
 
-/**
- * updated by alex5402 on 4/2/21.
- * * ∧＿∧
- * (`･ω･∥
- * 丶　つ０
- * しーＪ
- * TFNQw5HgWUS33Ke1eNmSFTwoQySGU7XNsK (USDT TRC20)
- */
+
 public class BProcessManagerService implements ISystemService {
     public static final String TAG = "BProcessManager";
 
@@ -95,7 +88,7 @@ public class BProcessManagerService implements ISystemService {
                 mProcessMap.put(buid, bProcess);
             }
             if (!initAppProcessL(app)) {
-                //init process fail
+                
                 bProcess.remove(processName);
                 mPidsSelfLocked.remove(app);
                 app = null;
@@ -147,7 +140,7 @@ public class BProcessManagerService implements ISystemService {
             try {
                 return Integer.parseInt(stubProcessName.substring(prefix.length()));
             } catch (NumberFormatException e) {
-                // ignore
+                
             }
         }
         return -1;
@@ -326,17 +319,17 @@ public class BProcessManagerService implements ISystemService {
     private static void createProc(ProcessRecord record) {
         File cmdline = new File(BEnvironment.getProcDir(record.bpid), "cmdline");
         try {
-            FileUtils.writeToFile(record.processName.getBytes(), cmdline);
+            BzFileUtils.writeToFile(record.processName.getBytes(), cmdline);
         } catch (IOException ignored) {
         }
     }
 
     private static void removeProc(ProcessRecord record) {
-        FileUtils.deleteDir(BEnvironment.getProcDir(record.bpid));
+        BzFileUtils.deleteDir(BEnvironment.getProcDir(record.bpid));
     }
 
     @Override
     public void systemReady() {
-        FileUtils.deleteDir(BEnvironment.getProcDir());
+        BzFileUtils.deleteDir(BEnvironment.getProcDir());
     }
 }

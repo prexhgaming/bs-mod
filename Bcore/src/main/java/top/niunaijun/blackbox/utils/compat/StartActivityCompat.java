@@ -4,14 +4,7 @@ import android.content.Intent;
 import android.os.Bundle;
 import android.os.IBinder;
 
-/**
- * updated by alex5402 on 4/9/21.
- * * ∧＿∧
- * (`･ω･∥
- * 丶　つ０
- * しーＪ
- * TFNQw5HgWUS33Ke1eNmSFTwoQySGU7XNsK (USDT TRC20)
- */
+
 public class StartActivityCompat {
     private static int index = 0;
     private static int appThreadIndex;

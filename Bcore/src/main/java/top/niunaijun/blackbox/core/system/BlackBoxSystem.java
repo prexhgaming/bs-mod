@@ -21,22 +21,15 @@ import top.niunaijun.blackbox.core.system.notification.BNotificationManagerServi
 import top.niunaijun.blackbox.core.system.os.BStorageManagerService;
 import top.niunaijun.blackbox.core.system.pm.BPackageInstallerService;
 import top.niunaijun.blackbox.core.system.pm.BPackageManagerService;
-import top.niunaijun.blackbox.core.system.pm.BXposedManagerService;
+
 import top.niunaijun.blackbox.core.system.user.BUserHandle;
 import top.niunaijun.blackbox.core.system.user.BUserManagerService;
 import top.niunaijun.blackbox.entity.pm.InstallOption;
-import top.niunaijun.blackbox.utils.FileUtils;
+import top.niunaijun.blackbox.utils.BzFileUtils;
 
 import top.niunaijun.blackbox.core.system.JarManager;
 
-/**
- * updated by alex5402 on 4/22/21.
- * * ∧＿∧
- * (`･ω･∥
- * 丶　つ０
- * しーＪ
- * TFNQw5HgWUS33Ke1eNmSFTwoQySGU7XNsK (USDT TRC20)
- */
+
 public class BlackBoxSystem {
     private static BlackBoxSystem sBlackBoxSystem;
     private final List<ISystemService> mServices = new ArrayList<>();
@@ -64,7 +57,7 @@ public class BlackBoxSystem {
         mServices.add(BJobManagerService.get());
         mServices.add(BStorageManagerService.get());
         mServices.add(BPackageInstallerService.get());
-        mServices.add(BXposedManagerService.get());
+
         mServices.add(BProcessManagerService.get());
         mServices.add(BAccountManagerService.get());
         mServices.add(BLocationManagerService.get());
@@ -84,14 +77,10 @@ public class BlackBoxSystem {
             } catch (PackageManager.NameNotFoundException ignored) {
             }
         }
-        // Initialize JAR environment using improved JarManager
+        
         JarManager.getInstance().initializeAsync();
         
-        // Test JAR manager functionality (can be removed in production)
-     /*   try {
-            JarManagerTest.testConfiguration();
-        } catch (Exception e) {
-            Log.w("BlackBoxSystem", "JAR manager test failed", e);
-        }*/
+        
+     
     }
 }

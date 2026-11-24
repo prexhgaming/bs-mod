@@ -9,14 +9,7 @@ import top.niunaijun.blackbox.fake.hook.MethodHook;
 import top.niunaijun.blackbox.fake.hook.ProxyMethod;
 import top.niunaijun.blackbox.utils.MethodParameterUtils;
 
-/**
- * updated by alex5402 on 4/13/21.
- * * ∧＿∧
- * (`･ω･∥
- * 丶　つ０
- * しーＪ
- * TFNQw5HgWUS33Ke1eNmSFTwoQySGU7XNsK (USDT TRC20)
- */
+
 public class IGraphicsStatsProxy extends BinderInvocationStub {
 
     public IGraphicsStatsProxy() {
@@ -40,6 +33,15 @@ public class IGraphicsStatsProxy extends BinderInvocationStub {
 
     @ProxyMethod("requestBufferForProcess")
     public static class RequestBufferForProcess extends MethodHook {
+        @Override
+        protected Object hook(Object who, Method method, Object[] args) throws Throwable {
+            MethodParameterUtils.replaceFirstAppPkg(args);
+            return method.invoke(who, args);
+        }
+    }
+
+    @ProxyMethod("requestRenderEngineFor")
+    public static class RequestRenderEngineFor extends MethodHook {
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
             MethodParameterUtils.replaceFirstAppPkg(args);

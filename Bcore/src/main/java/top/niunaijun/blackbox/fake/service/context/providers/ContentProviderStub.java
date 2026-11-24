@@ -3,22 +3,18 @@ package top.niunaijun.blackbox.fake.service.context.providers;
 import android.os.IInterface;
 
 import java.lang.reflect.Method;
+import java.util.Set;
 
 import black.android.content.BRAttributionSource;
 import top.niunaijun.blackbox.app.BActivityThread;
+import top.niunaijun.blackbox.BlackBoxCore;
 import top.niunaijun.blackbox.fake.hook.ClassInvocationStub;
 import top.niunaijun.blackbox.utils.compat.ContextCompat;
 import top.niunaijun.blackbox.utils.Slog;
 import android.os.Bundle;
+import top.niunaijun.blackbox.utils.AttributionSourceUtils;
 
-/**
- * updated by alex5402 on 4/8/21.
- * * ∧＿∧
- * (`･ω･∥
- * 丶　つ０
- * しーＪ
- * TFNQw5HgWUS33Ke1eNmSFTwoQySGU7XNsK (USDT TRC20)
- */
+
 public class ContentProviderStub extends ClassInvocationStub implements BContentProvider {
     public static final String TAG = "ContentProviderStub";
     private IInterface mBase;
@@ -52,48 +48,69 @@ public class ContentProviderStub extends ClassInvocationStub implements BContent
             return method.invoke(mBase, args);
         }
         
-        // Fix AttributionSource and package name issues
-        if (args != null && args.length > 0) {
-            for (int i = 0; i < args.length; i++) {
-                Object arg = args[i];
-                if (arg instanceof String) {
-                    String strArg = (String) arg;
-                    // Don't replace system provider authorities
-                    if (!isSystemProviderAuthority(strArg)) {
-                        // Replace package name with the correct one
-                        args[i] = mAppPkg;
-                    }
-                } else if (arg != null && arg.getClass().getName().equals(BRAttributionSource.getRealClass().getName())) {
-                    // Fix AttributionSource UID
-                    try {
-                        ContextCompat.fixAttributionSourceState(arg, BActivityThread.getBUid());
-                    } catch (Exception e) {
-                        // If fixing AttributionSource fails, try to create a new one or skip
-                        Slog.w(TAG, "Failed to fix AttributionSource, continuing with original");
-                    }
-                } else if (arg != null && arg.getClass().getName().contains("AttributionSource")) {
-                    // Handle any AttributionSource-like objects that might cause UID issues
-                    try {
-                        // Try to fix UID using reflection
-                        fixAttributionSourceUid(arg);
-                    } catch (Exception e) {
-                        Slog.w(TAG, "Failed to fix AttributionSource-like object: " + e.getMessage());
+        
+        String methodName = method.getName();
+        
+        
+        
+        if ("call".equals(methodName)) {
+            if (args != null) {
+                Class<?> attributionSourceClass = BRAttributionSource.getRealClass();
+                for (Object arg : args) {
+                    if (arg != null
+                            && attributionSourceClass != null
+                            && arg.getClass().getName().equals(attributionSourceClass.getName())) {
+                        ContextCompat.fixAttributionSourceState(
+                                arg,
+                                mAppPkg != null ? mAppPkg : BlackBoxCore.getHostPkg(),
+                                BlackBoxCore.getHostUid());
                     }
                 }
             }
+            AttributionSourceUtils.fixAttributionSourceInArgs(args);
+            replaceCallingPackageStringsForCall(args);
+            maybeLogSamsungAccountCall("before", args, null);
+        } else {
+            
+            if (args != null && args.length > 0) {
+                for (int i = 0; i < args.length; i++) {
+                    Object arg = args[i];
+                    if (arg instanceof String) {
+                        String strArg = (String) arg;
+                        
+                        if (!isSystemProviderAuthority(strArg)) {
+                            
+                            args[i] = mAppPkg;
+                        }
+                    }
+                }
+                
+                AttributionSourceUtils.fixAttributionSourceInArgs(args);
+            }
         }
         
-        // Pre-validate the call to prevent system-level SecurityException
-        String methodName = method.getName();
+        
+        methodName = method.getName();
         if (methodName.equals("query") || methodName.equals("insert") || 
             methodName.equals("update") || methodName.equals("delete") || 
             methodName.equals("bulkInsert") || methodName.equals("call")) {
+            boolean samsungIsChildCall = isSamsungAccountIsChildCall(args);
             
-            // Check if this is likely to cause a UID mismatch
             try {
-                return method.invoke(mBase, args);
+                Object result = method.invoke(mBase, args);
+                if (samsungIsChildCall) {
+                    Bundle synthetic = maybeBypassSamsungChildAccountResult(result);
+                    if (synthetic != null) {
+                        maybeLogSamsungAccountCall("synthetic", args, synthetic);
+                        return synthetic;
+                    }
+                }
+                if ("call".equals(methodName)) {
+                    maybeLogSamsungAccountCall("after", args, result);
+                }
+                return result;
             } catch (Throwable e) {
-                // Handle SecurityException and other UID-related errors
+                
                 Throwable cause = e.getCause();
                 if (isUidMismatchError(cause)) {
                     Slog.w(TAG, "UID mismatch in ContentProvider call, returning safe default: " + cause.getMessage());
@@ -106,8 +123,14 @@ public class ContentProviderStub extends ClassInvocationStub implements BContent
                     }
                 }
                 
-                // For call method specifically, always return safe default on any error
+                
                 if (methodName.equals("call")) {
+                    if (samsungIsChildCall) {
+                        Bundle synthetic = createSamsungAdultResultBundle();
+                        maybeLogSamsungAccountCall("synthetic", args, synthetic);
+                        Slog.w(TAG, "Bypassing Samsung Account child-account provider failure");
+                        return synthetic;
+                    }
                     Slog.w(TAG, "Error in call method, returning safe default: " + e.getMessage());
                     return getSafeDefaultValue(methodName, method.getReturnType());
                 }
@@ -116,11 +139,11 @@ public class ContentProviderStub extends ClassInvocationStub implements BContent
             }
         }
         
-        // For other methods, proceed normally
+        
         try {
             return method.invoke(mBase, args);
         } catch (Throwable e) {
-            // Handle SecurityException for UID mismatch in any method
+            
             Throwable cause = e.getCause();
             if (isUidMismatchError(cause)) {
                 Slog.w(TAG, "UID mismatch in " + methodName + ", returning safe default: " + cause.getMessage());
@@ -133,31 +156,31 @@ public class ContentProviderStub extends ClassInvocationStub implements BContent
     private Object getSafeDefaultValue(String methodName) {
         switch (methodName) {
             case "query":
-                return null; // Return null cursor
+                return null; 
             case "insert":
-                return null; // Return null URI
+                return null; 
             case "update":
             case "delete":
-                return 0; // Return 0 rows affected
+                return 0; 
             case "bulkInsert":
-                return 0; // Return 0 rows inserted
+                return 0; 
             case "call":
-                return null; // Return null for call method
+                return new Bundle(); 
             case "getType":
-                return null; // Return null MIME type
+                return null; 
             case "openFile":
-                return null; // Return null ParcelFileDescriptor
+                return null; 
             case "openAssetFile":
-                return null; // Return null AssetFileDescriptor
+                return null; 
             default:
-                return null; // Default fallback
+                return null; 
         }
     }
 
     private boolean isSystemProviderAuthority(String authority) {
         if (authority == null) return false;
         
-        // Check for system provider authorities that need special handling
+        
         return authority.equals("settings") || 
                authority.equals("settings_global") || 
                authority.equals("settings_system") || 
@@ -167,16 +190,14 @@ public class ContentProviderStub extends ClassInvocationStub implements BContent
                authority.startsWith("android.provider.Settings");
     }
     
-    /**
-     * Enhanced UID mismatch detection and handling
-     */
+    
     private boolean isUidMismatchError(Throwable error) {
         if (error == null) return false;
         
         String message = error.getMessage();
         if (message == null) return false;
         
-        // Check for UID mismatch patterns
+        
         return message.contains("Calling uid") && 
                message.contains("doesn't match source uid") ||
                message.contains("uid") && 
@@ -185,61 +206,159 @@ public class ContentProviderStub extends ClassInvocationStub implements BContent
                message.contains("UID mismatch");
     }
     
-    /**
-     * Get safe default value based on method name and return type
-     */
+    
     private Object getSafeDefaultValue(String methodName, Class<?> returnType) {
         if (returnType == null) {
             return getSafeDefaultValue(methodName);
         }
         
-        // Return type-specific safe defaults
+        
         if (returnType == String.class) {
-            return "true"; // Safe default for strings
+            return "true"; 
         } else if (returnType == int.class || returnType == Integer.class) {
-            return 1; // Safe default for integers
+            return 1; 
         } else if (returnType == long.class || returnType == Long.class) {
-            return 1L; // Safe default for longs
+            return 1L; 
         } else if (returnType == float.class || returnType == Float.class) {
-            return 1.0f; // Safe default for floats
+            return 1.0f; 
         } else if (returnType == boolean.class || returnType == Boolean.class) {
-            return true; // Safe default for booleans
+            return true; 
         } else if (returnType == Bundle.class) {
-            return new Bundle(); // Safe default for bundles
+            return new Bundle(); 
         }
         
-        // Fallback to method-specific defaults
+        
         return getSafeDefaultValue(methodName);
     }
 
-    /**
-     * Fix AttributionSource UID to prevent crashes on Android 12+
-     */
+    private boolean isSamsungAccountIsChildCall(Object[] args) {
+        if (!"com.sec.android.app.shealth".equals(mAppPkg) || args == null) {
+            return false;
+        }
+        boolean providerMatched = false;
+        boolean methodMatched = false;
+        for (Object arg : args) {
+            if (!(arg instanceof String)) {
+                continue;
+            }
+            String value = (String) arg;
+            if ("com.samsung.android.samsungaccount.accountmanagerprovider".equals(value)) {
+                providerMatched = true;
+            } else if ("isChildAccount".equals(value)) {
+                methodMatched = true;
+            }
+        }
+        return providerMatched && methodMatched;
+    }
+
+    private Bundle maybeBypassSamsungChildAccountResult(Object result) {
+        if (!(result instanceof Bundle)) {
+            return createSamsungAdultResultBundle();
+        }
+        Bundle bundle = (Bundle) result;
+        if (!bundle.containsKey("result_code")) {
+            return createSamsungAdultResultBundle();
+        }
+        int resultCode = bundle.getInt("result_code", -1);
+        if (resultCode != 0) {
+            return createSamsungAdultResultBundle();
+        }
+        return null;
+    }
+
+    private Bundle createSamsungAdultResultBundle() {
+        Bundle bundle = new Bundle();
+        bundle.putInt("result_code", 0);
+        bundle.putString("result_message", "");
+        bundle.putBoolean("is_child_account", false);
+        bundle.putBoolean("isChildAccount", false);
+        bundle.putBoolean("childAccountAccessError", false);
+        return bundle;
+    }
+
+    private void replaceCallingPackageStringsForCall(Object[] args) {
+        if (args == null || mAppPkg == null || mAppPkg.isEmpty()) {
+            return;
+        }
+        String hostPkg = BlackBoxCore.getHostPkg();
+        if (hostPkg == null || hostPkg.isEmpty() || hostPkg.equals(mAppPkg)) {
+            return;
+        }
+        for (int i = 0; i < args.length; i++) {
+            Object arg = args[i];
+            if (!(arg instanceof String)) {
+                continue;
+            }
+            String value = (String) arg;
+            if (hostPkg.equals(value)) {
+                args[i] = mAppPkg;
+            } else if ((hostPkg + ".").equals(value)) {
+                args[i] = mAppPkg + ".";
+            }
+        }
+    }
+
+    private void maybeLogSamsungAccountCall(String stage, Object[] args, Object result) {
+        if (!"com.sec.android.app.shealth".equals(mAppPkg) || args == null) {
+            return;
+        }
+        boolean relevant = false;
+        StringBuilder builder = new StringBuilder();
+        builder.append("SamsungAccount call ").append(stage).append(" args=[");
+        for (int i = 0; i < args.length; i++) {
+            Object arg = args[i];
+            if (i > 0) {
+                builder.append(", ");
+            }
+            builder.append(arg);
+            if (arg instanceof String) {
+                String value = (String) arg;
+                if (value.contains("samsungaccount") || value.contains("isChildAccount") || value.contains("sign")) {
+                    relevant = true;
+                }
+            }
+        }
+        builder.append("]");
+        if (result instanceof Bundle) {
+            Bundle bundle = (Bundle) result;
+            Set<String> keys = bundle.keySet();
+            builder.append(" resultKeys=").append(keys);
+            for (String key : keys) {
+                builder.append(" ").append(key).append("=").append(bundle.get(key));
+            }
+            relevant = true;
+        }
+        if (relevant) {
+            Slog.d(TAG, builder.toString());
+        }
+    }
+
+    
     private void fixAttributionSourceUid(Object attributionSource) {
         try {
             if (attributionSource == null) return;
             
             Class<?> attributionSourceClass = attributionSource.getClass();
             
-            // Try to find and set the UID field
+            
             try {
                 java.lang.reflect.Field uidField = attributionSourceClass.getDeclaredField("mUid");
                 uidField.setAccessible(true);
-                uidField.set(attributionSource, BActivityThread.getBUid());
+                uidField.set(attributionSource, BlackBoxCore.getHostUid());
                 Slog.d(TAG, "Fixed AttributionSource UID via field access");
             } catch (NoSuchFieldException e) {
-                // Try alternative field names
+                
                 try {
                     java.lang.reflect.Field uidField = attributionSourceClass.getDeclaredField("uid");
                     uidField.setAccessible(true);
-                    uidField.set(attributionSource, BActivityThread.getBUid());
+                    uidField.set(attributionSource, BlackBoxCore.getHostUid());
                     Slog.d(TAG, "Fixed AttributionSource UID via alternative field");
                 } catch (NoSuchFieldException e2) {
-                    // Try using setter method
+                    
                     try {
                         java.lang.reflect.Method setUidMethod = attributionSourceClass.getDeclaredMethod("setUid", int.class);
                         setUidMethod.setAccessible(true);
-                        setUidMethod.invoke(attributionSource, BActivityThread.getBUid());
+                        setUidMethod.invoke(attributionSource, BlackBoxCore.getHostUid());
                         Slog.d(TAG, "Fixed AttributionSource UID via setter method");
                     } catch (Exception e3) {
                         Slog.w(TAG, "Could not fix AttributionSource UID: " + e3.getMessage());
@@ -247,14 +366,14 @@ public class ContentProviderStub extends ClassInvocationStub implements BContent
                 }
             }
             
-            // Also try to fix package name
+            
             try {
                 java.lang.reflect.Field packageField = attributionSourceClass.getDeclaredField("mPackageName");
                 packageField.setAccessible(true);
                 packageField.set(attributionSource, mAppPkg);
                 Slog.d(TAG, "Fixed AttributionSource package name");
             } catch (Exception e) {
-                // Ignore package name fixing errors
+                
             }
             
         } catch (Exception e) {

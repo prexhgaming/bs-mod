@@ -4,14 +4,7 @@ import android.content.ComponentName;
 import android.os.Parcel;
 import android.os.Parcelable;
 
-/**
- * updated by alex5402 on 4/7/21.
- * * ∧＿∧
- * (`･ω･∥
- * 丶　つ０
- * しーＪ
- * TFNQw5HgWUS33Ke1eNmSFTwoQySGU7XNsK (USDT TRC20)
- */
+
 public class UnbindRecord implements Parcelable {
     private int mBindCount;
     private int mStartId;

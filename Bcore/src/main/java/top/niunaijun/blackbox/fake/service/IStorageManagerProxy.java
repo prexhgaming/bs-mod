@@ -13,16 +13,10 @@ import top.niunaijun.blackbox.app.BActivityThread;
 import top.niunaijun.blackbox.fake.hook.BinderInvocationStub;
 import top.niunaijun.blackbox.fake.hook.MethodHook;
 import top.niunaijun.blackbox.fake.hook.ProxyMethod;
+import top.niunaijun.blackbox.core.system.user.BUserHandle;
 import top.niunaijun.blackbox.utils.compat.BuildCompat;
 
-/**
- * updated by alex5402 on 4/10/21.
- * * ∧＿∧
- * (`･ω･∥
- * 丶　つ０
- * しーＪ
- * TFNQw5HgWUS33Ke1eNmSFTwoQySGU7XNsK (USDT TRC20)
- */
+
 public class IStorageManagerProxy extends BinderInvocationStub {
 
     public IStorageManagerProxy() {
@@ -52,6 +46,18 @@ public class IStorageManagerProxy extends BinderInvocationStub {
 
     @ProxyMethod("getVolumeList")
     public static class GetVolumeList extends MethodHook {
+
+        private static Object invokeAsHost(Object who, Method method, Object[] args) throws Throwable {
+            if (args != null && args.length >= 3) {
+                args[0] = BlackBoxCore.getHostUid();
+                args[1] = BlackBoxCore.getHostPkg();
+            }
+            if (args != null && args.length >= 4) {
+                args[3] = BUserHandle.getUserId(android.os.Process.myUid());
+            }
+            return method.invoke(who, args);
+        }
+
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
             if (args == null) {
@@ -67,11 +73,11 @@ public class IStorageManagerProxy extends BinderInvocationStub {
                 int flags = (int) args[2];
                 StorageVolume[] volumeList = BlackBoxCore.getBStorageManager().getVolumeList(uid, packageName, flags, BActivityThread.getUserId());
                 if (volumeList == null) {
-                    return method.invoke(who, args);
+                    return invokeAsHost(who, method, args);
                 }
                 return volumeList;
             } catch (Throwable t) {
-                return method.invoke(who, args);
+                return invokeAsHost(who, method, args);
             }
         }
     }

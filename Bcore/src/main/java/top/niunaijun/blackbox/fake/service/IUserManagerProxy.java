@@ -1,6 +1,7 @@
 package top.niunaijun.blackbox.fake.service;
 
 import android.content.Context;
+import android.os.Bundle;
 
 import java.lang.reflect.Method;
 import java.util.ArrayList;
@@ -14,14 +15,7 @@ import top.niunaijun.blackbox.fake.hook.BinderInvocationStub;
 import top.niunaijun.blackbox.fake.hook.MethodHook;
 import top.niunaijun.blackbox.fake.hook.ProxyMethod;
 
-/**
- * updated by alex5402 on 4/8/21.
- * * ∧＿∧
- * (`･ω･∥
- * 丶　つ０
- * しーＪ
- * TFNQw5HgWUS33Ke1eNmSFTwoQySGU7XNsK (USDT TRC20)
- */
+
 public class IUserManagerProxy extends BinderInvocationStub {
     public IUserManagerProxy() {
         super(BRServiceManager.get().getService(Context.USER_SERVICE));
@@ -46,8 +40,21 @@ public class IUserManagerProxy extends BinderInvocationStub {
     public static class GetApplicationRestrictions extends MethodHook {
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
-            args[0] = BlackBoxCore.getHostPkg();
-            return method.invoke(who, args);
+            // Privacy-first: never delegate per-app restrictions to the host.
+            // Sandboxed apps normally do not have enterprise restrictions, and
+            // Chromium-based browsers crash if the framework throws here.
+            return new Bundle();
+        }
+    }
+
+    @ProxyMethod("getApplicationRestrictionsForUser")
+    public static class GetApplicationRestrictionsForUser extends MethodHook {
+        @Override
+        protected Object hook(Object who, Method method, Object[] args) throws Throwable {
+            // Android 14+/16 paths may call the "*ForUser" variant directly.
+            // Return an empty bundle rather than leaking host policy state or
+            // surfacing a SecurityException for the sandbox package/uid pair.
+            return new Bundle();
         }
     }
 

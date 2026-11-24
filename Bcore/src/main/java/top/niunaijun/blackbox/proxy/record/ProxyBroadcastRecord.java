@@ -2,14 +2,7 @@ package top.niunaijun.blackbox.proxy.record;
 
 import android.content.Intent;
 
-/**
- * updated by alex5402 on 4/7/21.
- * * ∧＿∧
- * (`･ω･∥
- * 丶　つ０
- * しーＪ
- * TFNQw5HgWUS33Ke1eNmSFTwoQySGU7XNsK (USDT TRC20)
- */
+
 public class ProxyBroadcastRecord {
     public Intent mIntent;
     public int mUserId;

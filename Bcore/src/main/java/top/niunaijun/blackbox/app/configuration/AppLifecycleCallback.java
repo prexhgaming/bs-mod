@@ -6,14 +6,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.os.Bundle;
 
-/**
- * updated by alex5402 on 5/5/21.
- * * ∧＿∧
- * (`･ω･∥
- * 丶　つ０
- * しーＪ
- * TFNQw5HgWUS33Ke1eNmSFTwoQySGU7XNsK (USDT TRC20)
- */
+
 public class AppLifecycleCallback implements Application.ActivityLifecycleCallbacks {
     public static AppLifecycleCallback EMPTY = new AppLifecycleCallback() {
 
@@ -21,6 +14,12 @@ public class AppLifecycleCallback implements Application.ActivityLifecycleCallba
 
     public void beforeMainLaunchApk(String packageName, int userid) {
 
+    }
+    
+    
+    public boolean onStoragePermissionNeeded(String packageName, int userId) {
+        
+        return false;
     }
 
     public void beforeMainApplicationAttach(Application app, Context context) {

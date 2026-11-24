@@ -18,16 +18,9 @@ import top.niunaijun.blackbox.core.env.BEnvironment;
 import top.niunaijun.blackbox.core.system.ISystemService;
 import top.niunaijun.blackbox.core.system.pm.BPackageManagerService;
 import top.niunaijun.blackbox.utils.CloseUtils;
-import top.niunaijun.blackbox.utils.FileUtils;
+import top.niunaijun.blackbox.utils.BzFileUtils;
 
-/**
- * updated by alex5402 on 4/22/21.
- * * ∧＿∧
- * (`･ω･∥
- * 丶　つ０
- * しーＪ
- * TFNQw5HgWUS33Ke1eNmSFTwoQySGU7XNsK (USDT TRC20)
- */
+
 public class BUserManagerService extends IBUserManagerService.Stub implements ISystemService {
     private static BUserManagerService sService = new BUserManagerService();
     public final HashMap<Integer, BUserInfo> mUsers = new HashMap<>();
@@ -93,8 +86,8 @@ public class BUserManagerService extends IBUserManagerService.Stub implements IS
 
                 mUsers.remove(userId);
                 saveUserInfoLocked();
-                FileUtils.deleteDir(BEnvironment.getUserDir(userId));
-                FileUtils.deleteDir(BEnvironment.getExternalUserDir(userId));
+                BzFileUtils.deleteDir(BEnvironment.getUserDir(userId));
+                BzFileUtils.deleteDir(BEnvironment.getExternalUserDir(userId));
             }
         }
     }
@@ -119,7 +112,7 @@ public class BUserManagerService extends IBUserManagerService.Stub implements IS
             parcel.writeTypedList(bUsers);
             try {
                 fileOutputStream = atomicFile.startWrite();
-                FileUtils.writeParcelToOutput(parcel, fileOutputStream);
+                BzFileUtils.writeParcelToOutput(parcel, fileOutputStream);
                 atomicFile.finishWrite(fileOutputStream);
             } catch (IOException e) {
                 e.printStackTrace();
@@ -142,7 +135,7 @@ public class BUserManagerService extends IBUserManagerService.Stub implements IS
                     return;
                 }
                 is = new FileInputStream(BEnvironment.getUserInfoConf());
-                byte[] bytes = FileUtils.toByteArray(is);
+                byte[] bytes = BzFileUtils.toByteArray(is);
                 parcel.unmarshall(bytes, 0, bytes.length);
                 parcel.setDataPosition(0);
 

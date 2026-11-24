@@ -38,19 +38,13 @@ import top.niunaijun.blackbox.proxy.ProxyActivity;
 import top.niunaijun.blackbox.proxy.ProxyManifest;
 import top.niunaijun.blackbox.proxy.record.ProxyActivityRecord;
 import top.niunaijun.blackbox.utils.ComponentUtils;
+import top.niunaijun.blackbox.utils.IntentSanitizer;
 import top.niunaijun.blackbox.utils.Slog;
 import top.niunaijun.blackbox.utils.compat.ActivityManagerCompat;
 
 import static android.content.pm.PackageManager.GET_ACTIVITIES;
 
-/**
- * updated by alex5402 on 4/5/21.
- * * ∧＿∧
- * (`･ω･∥
- * 丶　つ０
- * しーＪ
- * TFNQw5HgWUS33Ke1eNmSFTwoQySGU7XNsK (USDT TRC20)
- */
+
 @SuppressWarnings({"deprecation", "unchecked"})
 public class ActivityStack {
     public static final String TAG = "ActivityStack";
@@ -144,11 +138,11 @@ public class ActivityStack {
                 break;
         }
 
-        // 如果还没有task则新启动一个task
+        
         if (taskRecord == null || taskRecord.needNewTask()) {
             return startActivityInNewTaskLocked(userId, intent, activityInfo, resultTo, launchModeFlags);
         }
-        // 移至前台
+        
         mAms.moveTaskToFront(taskRecord.id, 0);
 
         boolean notStartToFront = false;
@@ -170,7 +164,7 @@ public class ActivityStack {
 
         if (clearTop) {
             if (targetActivityRecord != null) {
-                // 目标栈上面所有activity出栈
+                
                 synchronized (targetActivityRecord.task.activities) {
                     for (int i = targetActivityRecord.task.activities.size() - 1; i >= 0; i--) {
                         ActivityRecord next = targetActivityRecord.task.activities.get(i);
@@ -181,7 +175,7 @@ public class ActivityStack {
                             if (singleTop) {
                                 newIntentRecord = targetActivityRecord;
                             } else {
-                                // clearTop并且不是singleTop，目标也finish，重建。
+                                
                                 targetActivityRecord.finished = true;
                             }
                             break;
@@ -198,7 +192,7 @@ public class ActivityStack {
                 synchronized (mLaunchingActivities) {
                     for (ActivityRecord launchingActivity : mLaunchingActivities) {
                         if (!launchingActivity.finished && launchingActivity.component.equals(intent.getComponent())) {
-                            // todo update onNewIntent from intent
+                            
                             ignore = true;
                         }
                     }
@@ -212,9 +206,9 @@ public class ActivityStack {
             } else {
                 ActivityRecord record = findActivityRecordByComponentName(userId, ComponentUtils.toComponentName(activityInfo));
                 if (record != null) {
-                    // 需要调用目标onNewIntent
+                    
                     newIntentRecord = record;
-                    // 目标栈上面所有activity出栈
+                    
                     synchronized (taskRecord.activities) {
                         for (int i = taskRecord.activities.size() - 1; i >= 0; i--) {
                             ActivityRecord next = taskRecord.activities.get(i);
@@ -233,17 +227,17 @@ public class ActivityStack {
             newIntentRecord = topActivityRecord;
         }
 
-        // clearTask finish All
+        
         if (clearTask && newTask) {
             for (ActivityRecord activity : taskRecord.activities) {
                 activity.finished = true;
             }
             finishAllActivity(userId);
         }
-        // Do NOT call finishAllActivity(userId) unless clearTask is true
+        
 
         if (newIntentRecord != null) {
-            // 通知onNewIntent
+            
             deliverNewIntentLocked(newIntentRecord, intent);
             return 0;
         } else if (ignore) {
@@ -353,12 +347,14 @@ public class ActivityStack {
             assert resources != null;
             typedArray = resources.newTheme().obtainStyledAttributes(id, BRRstyleable.get().Window());
             boolean windowIsTranslucent = typedArray.getBoolean(BRRstyleable.get().Window_windowIsTranslucent(), false);
-            if (windowIsTranslucent) {
+            boolean forceOpaqueProxy = shouldForceOpaqueProxy(activityInfo);
+            if (windowIsTranslucent && !forceOpaqueProxy) {
                 shadow.setComponent(new ComponentName(BlackBoxCore.getHostPkg(), ProxyManifest.TransparentProxyActivity(vpid)));
             } else {
                 shadow.setComponent(new ComponentName(BlackBoxCore.getHostPkg(), ProxyManifest.getProxyActivity(vpid)));
             }
-            Slog.d(TAG, activityInfo + ", windowIsTranslucent: " + windowIsTranslucent);
+            Slog.d(TAG, activityInfo + ", windowIsTranslucent: " + windowIsTranslucent
+                    + ", forceOpaqueProxy: " + forceOpaqueProxy);
         } catch (Throwable e) {
             e.printStackTrace();
             shadow.setComponent(new ComponentName(BlackBoxCore.getHostPkg(), ProxyManifest.getProxyActivity(vpid)));
@@ -367,8 +363,21 @@ public class ActivityStack {
                 typedArray.recycle();
             }
         }
+        IntentSanitizer.sanitizeClassExtrasForIpc(intent);
         ProxyActivityRecord.saveStub(shadow, intent, target.mActivityInfo, target.mActivityRecord, target.mUserId);
         return shadow;
+    }
+
+    private boolean shouldForceOpaqueProxy(ActivityInfo activityInfo) {
+        if (activityInfo == null) {
+            return false;
+        }
+
+        // Samsung Health's sign-in authenticator declares a translucent window, but
+        // running it through TransparentProxyActivity leaves the proxy task top-resumed
+        // while the real auth windows are focused. That stalls the sign-in flow.
+        return "com.sec.android.app.shealth".equals(activityInfo.packageName)
+                && "com.samsung.android.app.shealth.accounts.AuthenticatorActivity".equals(activityInfo.name);
     }
 
     private void finishAllActivity(int userId) {
@@ -524,8 +533,15 @@ public class ActivityStack {
                 if (resultTo != null) {
                     return resultTo.info.packageName;
                 }
+                // Privacy: if we can't resolve the "resultTo" link, fall back to the
+                // current virtual activity package rather than leaking the host package.
+                if (activityRecordByToken.info != null && activityRecordByToken.info.packageName != null) {
+                    return activityRecordByToken.info.packageName;
+                }
             }
-            return BlackBoxCore.getHostPkg();
+            // Android returns null when there is no calling activity. Returning the
+            // host package here only leaks host identity without helping the guest.
+            return BlackBoxCore.getAppPackageName();
         }
     }
 
@@ -538,8 +554,16 @@ public class ActivityStack {
                 if (resultTo != null) {
                     return resultTo.component;
                 }
+                // Privacy: fall back to the current virtual activity (best-effort).
+                if (activityRecordByToken.component != null) {
+                    return activityRecordByToken.component;
+                }
             }
-            return new ComponentName(BlackBoxCore.getHostPkg(), ProxyActivity.P0.class.getName());
+            String appPkg = BlackBoxCore.getAppPackageName();
+            if (appPkg != null) {
+                return new ComponentName(appPkg, ProxyActivity.P0.class.getName());
+            }
+            return null;
         }
     }
 

@@ -17,6 +17,7 @@ import android.content.res.AssetManager;
 import android.content.res.Resources;
 import android.os.Build;
 
+import java.lang.reflect.Method;
 import java.util.HashSet;
 import java.util.Set;
 
@@ -29,18 +30,11 @@ import top.niunaijun.blackbox.BlackBoxCore;
 import top.niunaijun.blackbox.core.env.AppSystemEnv;
 import top.niunaijun.blackbox.core.env.BEnvironment;
 import top.niunaijun.blackbox.entity.pm.InstallOption;
-import top.niunaijun.blackbox.utils.ArrayUtils;
-import top.niunaijun.blackbox.utils.FileUtils;
+import top.niunaijun.blackbox.utils.BzArrayUtils;
+import top.niunaijun.blackbox.utils.BzFileUtils;
 import top.niunaijun.blackbox.utils.compat.BuildCompat;
 
-/**
- * updated by alex5402 on 4/15/21.
- * * ∧＿∧
- * (`･ω･∥
- * 丶　つ０
- * しーＪ
- * TFNQw5HgWUS33Ke1eNmSFTwoQySGU7XNsK (USDT TRC20)
- */
+
 @SuppressLint({"SdCardPath", "NewApi"})
 public class PackageManagerCompat {
 
@@ -106,7 +100,7 @@ public class PackageManagerCompat {
                     final BPackage.Activity a = p.activities.get(i);
                     res[num++] = generateActivityInfo(a, flags, state, userId);
                 }
-                pi.activities = ArrayUtils.trimToSize(res, num);
+                pi.activities = BzArrayUtils.trimToSize(res, num);
             }
         }
         if ((flags & PackageManager.GET_RECEIVERS) != 0) {
@@ -119,7 +113,7 @@ public class PackageManagerCompat {
                     final BPackage.Activity a = p.receivers.get(i);
                     res[num++] = generateActivityInfo(a, flags, state, userId);
                 }
-                pi.receivers = ArrayUtils.trimToSize(res, num);
+                pi.receivers = BzArrayUtils.trimToSize(res, num);
             }
         }
         if ((flags & PackageManager.GET_SERVICES) != 0) {
@@ -130,7 +124,7 @@ public class PackageManagerCompat {
                 final ServiceInfo[] res = new ServiceInfo[N];
                 for (int i = 0; i < N; i++) {
                     final BPackage.Service s = p.services.get(i);
-                    //res[num++] = generateServiceInfo(s, flags, state, userId);
+                    
                     ServiceInfo serviceInfo = generateServiceInfo(s, flags, state, userId);
                     if(serviceInfo == null) continue;
                     if ((flags & PackageManager.GET_META_DATA) != 0) {
@@ -141,7 +135,7 @@ public class PackageManagerCompat {
                         res[num++] = serviceInfo;
                     }
                 }
-                pi.services = ArrayUtils.trimToSize(res, num);
+                pi.services = BzArrayUtils.trimToSize(res, num);
             }
         }
         if ((flags & PackageManager.GET_PROVIDERS) != 0) {
@@ -157,7 +151,7 @@ public class PackageManagerCompat {
                         res[num++] = providerInfo;
                     }
                 }
-                pi.providers = ArrayUtils.trimToSize(res, num);
+                pi.providers = BzArrayUtils.trimToSize(res, num);
             }
         }
         if ((flags & PackageManager.GET_INSTRUMENTATION) != 0) {
@@ -188,11 +182,11 @@ public class PackageManagerCompat {
                 for (int i = 0; i < N; i++) {
                     final String perm = p.requestedPermissions.get(i);
                     pi.requestedPermissions[i] = perm;
-                    // The notion of required permissions is deprecated but for compatibility.
-//                    pi.requestedPermissionsFlags[i] |= PackageInfo.REQUESTED_PERMISSION_REQUIRED;
-//                    if (grantedPermissions != null && grantedPermissions.contains(perm)) {
-//                        pi.requestedPermissionsFlags[i] |= PackageInfo.REQUESTED_PERMISSION_GRANTED;
-//                    }
+                    
+
+
+
+
                 }
             }
         }
@@ -226,11 +220,24 @@ public class PackageManagerCompat {
         if (!checkUseInstalledOrHidden(flags, state, a.info.applicationInfo)) {
             return null;
         }
-        // Make shallow copies so we can store the metadata safely
+        
         ActivityInfo ai = new ActivityInfo(a.info);
         ai.metaData = a.metaData;
         ai.processName = BPackageManagerService.fixProcessName(ai.packageName, ai.processName);
         ai.applicationInfo = generateApplicationInfo(a.owner, flags, state, userId);
+
+        // Activity-alias support: some apps (e.g., Instagram) use <activity-alias android:name=".InternalLauncher"
+        // with android:targetActivity pointing at the real Activity class.
+        // If we return the alias name as the class to instantiate, ActivityThread will crash with CNFE.
+        if (ai.targetActivity != null && !ai.targetActivity.isEmpty()) {
+            String target = ai.targetActivity;
+            if (target.startsWith(".")) {
+                target = ai.packageName + target;
+            } else if (target.indexOf('.') < 0) {
+                target = ai.packageName + "." + target;
+            }
+            ai.name = target;
+        }
         return ai;
     }
 
@@ -238,7 +245,7 @@ public class PackageManagerCompat {
         if (!checkUseInstalledOrHidden(flags, state, s.info.applicationInfo)) {
             return null;
         }
-        // Make shallow copies so we can store the metadata safely
+        
         ServiceInfo si = new ServiceInfo(s.info);
         si.metaData = s.metaData;
         si.processName = BPackageManagerService.fixProcessName(si.packageName, si.processName);
@@ -250,7 +257,7 @@ public class PackageManagerCompat {
         if (!checkUseInstalledOrHidden(flags, state, p.info.applicationInfo)) {
             return null;
         }
-        // Make shallow copies so we can store the metadata safely
+        
         ProviderInfo pi = new ProviderInfo(p.info);
         if (pi.authority == null)
             return null;
@@ -312,7 +319,8 @@ public class PackageManagerCompat {
         ai.publicSourceDir = sourceDir;
         ai.sourceDir = sourceDir;
         ai.uid = p.mExtras.appId;
-//        ai.uid = baseApplication.uid;
+        hydrateSplitApkPathsFromHost(ai);
+
 
         if (BuildCompat.isL()) {
             BRApplicationInfoL.get(ai)._set_primaryCpuAbi(Build.CPU_ABI);
@@ -339,11 +347,64 @@ public class PackageManagerCompat {
         return ai;
     }
 
+    private static void hydrateSplitApkPathsFromHost(ApplicationInfo ai) {
+        if (ai == null) {
+            return;
+        }
+        if (ai.splitSourceDirs != null && ai.splitSourceDirs.length > 0) {
+            return;
+        }
+
+        try {
+            ApplicationInfo hostAi = resolveHostInstalledApplicationInfo(ai.packageName);
+            if (hostAi == null || hostAi.splitSourceDirs == null || hostAi.splitSourceDirs.length == 0) {
+                return;
+            }
+
+            ai.splitSourceDirs = hostAi.splitSourceDirs;
+            ai.splitPublicSourceDirs = hostAi.splitPublicSourceDirs != null
+                    ? hostAi.splitPublicSourceDirs
+                    : hostAi.splitSourceDirs;
+            ai.splitNames = hostAi.splitNames;
+        } catch (Throwable ignored) {
+        }
+    }
+
+    private static ApplicationInfo resolveHostInstalledApplicationInfo(String packageName) {
+        if (packageName == null) {
+            return null;
+        }
+
+        PackageManager pm = BlackBoxCore.getPackageManager();
+        if (pm == null) {
+            return null;
+        }
+
+        int hostUserId = BlackBoxCore.getHostUserId();
+        if (hostUserId >= 0) {
+            try {
+                Method asUser = pm.getClass().getMethod("getApplicationInfoAsUser", String.class, int.class, int.class);
+                asUser.setAccessible(true);
+                Object info = asUser.invoke(pm, packageName, 0, hostUserId);
+                if (info instanceof ApplicationInfo) {
+                    return (ApplicationInfo) info;
+                }
+            } catch (Throwable ignored) {
+            }
+        }
+
+        try {
+            return pm.getApplicationInfo(packageName, 0);
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
     private static boolean checkUseInstalledOrHidden(int flags, BPackageUserState state,
                                                      ApplicationInfo appInfo) {
         if (AppSystemEnv.isBlackPackage(appInfo.packageName))
             return false;
-        // Returns false if the package is hidden system app until installed.
+        
         if (!state.installed || state.hidden) {
             return false;
         }
@@ -355,7 +416,7 @@ public class PackageManagerCompat {
         String APACHE_LEGACY_JAR_Q = "/system/framework/org.apache.http.legacy.jar";
         Set<String> sharedLibraryFileList = new HashSet<>();
         if (BuildCompat.isQ()) {
-            if (!FileUtils.isExist(APACHE_LEGACY_JAR_Q)) {
+            if (!BzFileUtils.isExist(APACHE_LEGACY_JAR_Q)) {
                 sharedLibraryFileList.add(APACHE_LEGACY_JAR);
             } else {
                 sharedLibraryFileList.add(APACHE_LEGACY_JAR_Q);
@@ -363,11 +424,11 @@ public class PackageManagerCompat {
         } else {
             sharedLibraryFileList.add(APACHE_LEGACY_JAR);
         }
-//        if (BXposedManagerService.get().isXPEnable()) {
-//            ApplicationInfo base = BlackBoxCore.getContext().getApplicationInfo();
-//            sharedLibraryFileList.add(base.sourceDir);
-//        }
-//        sharedLibraryFileList.add(BEnvironment.JUNIT_JAR.getAbsolutePath());
+
+
+
+
+
         info.sharedLibraryFiles = sharedLibraryFileList.toArray(new String[]{});
     }
 

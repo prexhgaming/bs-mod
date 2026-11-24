@@ -5,16 +5,9 @@ import java.util.Locale;
 
 import top.niunaijun.blackbox.BlackBoxCore;
 import top.niunaijun.blackbox.app.BActivityThread;
-import top.niunaijun.blackbox.utils.FileUtils;
+import top.niunaijun.blackbox.utils.BzFileUtils;
 
-/**
- * updated by alex5402 on 4/22/21.
- * * ∧＿∧
- * (`･ω･∥
- * 丶　つ０
- * しーＪ
- * TFNQw5HgWUS33Ke1eNmSFTwoQySGU7XNsK (USDT TRC20)
- */
+
 public class BEnvironment {
     private static final File sVirtualRoot = new File(BlackBoxCore.getContext().getCacheDir().getParent(), "blackbox");
     private static final File sExternalVirtualRoot = BlackBoxCore.getContext().getExternalFilesDir("blackbox");
@@ -23,11 +16,11 @@ public class BEnvironment {
     public static File EMPTY_JAR = new File(getCacheDir(), "empty.apk");
 
     public static void load() {
-        FileUtils.mkdirs(sVirtualRoot);
-        FileUtils.mkdirs(sExternalVirtualRoot);
-        FileUtils.mkdirs(getSystemDir());
-        FileUtils.mkdirs(getCacheDir());
-        FileUtils.mkdirs(getProcDir());
+        BzFileUtils.mkdirs(sVirtualRoot);
+        BzFileUtils.mkdirs(sExternalVirtualRoot);
+        BzFileUtils.mkdirs(getSystemDir());
+        BzFileUtils.mkdirs(getCacheDir());
+        BzFileUtils.mkdirs(getProcDir());
     }
 
     public static File getVirtualRoot() {
@@ -86,6 +79,11 @@ public class BEnvironment {
         return new File(sVirtualRoot, String.format(Locale.CHINA, "data/user/%d", userId));
     }
 
+    public static File getExternalObbDir(String packageName, int userId) {
+        return new File(getExternalUserDir(userId), String.format(Locale.CHINA, "Android/obb/%s", packageName));
+    }
+
+
     public static File getDeDataDir(String packageName, int userId) {
         return new File(sVirtualRoot, String.format(Locale.CHINA, "data/user_de/%d/%s", userId, packageName));
     }
@@ -101,7 +99,7 @@ public class BEnvironment {
 
     public static File getProcDir(int pid) {
         File file = new File(getProcDir(), String.format(Locale.CHINA, "%d", pid));
-        FileUtils.mkdirs(file);
+        BzFileUtils.mkdirs(file);
         return file;
     }
 
@@ -139,6 +137,10 @@ public class BEnvironment {
 
     public static File getBaseApkDir(String packageName) {
         return new File(sVirtualRoot, "data/app/" + packageName + "/base.apk");
+    }
+
+    public static File getSplitApkDir(String packageName) {
+        return new File(getAppDir(packageName), "splits");
     }
 
     public static File getAppLibDir(String packageName) {

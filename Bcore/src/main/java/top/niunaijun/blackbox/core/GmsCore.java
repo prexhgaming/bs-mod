@@ -1,21 +1,16 @@
 package top.niunaijun.blackbox.core;
 
+import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 
 import top.niunaijun.blackbox.BlackBoxCore;
 import top.niunaijun.blackbox.entity.pm.InstallResult;
 
-/**
- * updated by alex5402 on 4/9/21.
- * * ∧＿∧
- * (`･ω･∥
- * 丶　つ０
- * しーＪ
- * TFNQw5HgWUS33Ke1eNmSFTwoQySGU7XNsK (USDT TRC20)
- */
+
 public class GmsCore {
     private static final String TAG = "GmsCore";
 
@@ -31,7 +26,7 @@ public class GmsCore {
         GOOGLE_APP.add("com.google.android.wearable.app");
         GOOGLE_APP.add("com.google.android.wearable.app.cn");
 
-        // GMS must install at first
+        
         GOOGLE_SERVICE.add(GMS_PKG);
         GOOGLE_SERVICE.add(GSF_PKG);
         GOOGLE_SERVICE.add("com.google.android.gsf.login");
@@ -63,7 +58,7 @@ public class GmsCore {
             try {
                 BlackBoxCore.getContext().getPackageManager().getApplicationInfo(packageName, 0);
             } catch (PackageManager.NameNotFoundException e) {
-                // Ignore
+                
                 continue;
             }
             InstallResult installResult = blackBoxCore.installPackageAsUser(packageName, userId);
@@ -98,6 +93,79 @@ public class GmsCore {
     public static void uninstallGApps(int userId) {
         uninstallPackages(GOOGLE_SERVICE, userId);
         uninstallPackages(GOOGLE_APP, userId);
+    }
+
+    public static boolean hasGmsTraces(int userId) {
+        BlackBoxCore blackBoxCore = BlackBoxCore.get();
+
+        Set<String> known = new HashSet<>();
+        known.addAll(GOOGLE_SERVICE);
+        known.addAll(GOOGLE_APP);
+
+        for (String pkg : known) {
+            try {
+                if (blackBoxCore.isInstalled(pkg, userId)) {
+                    return true;
+                }
+            } catch (Throwable ignored) {
+            }
+        }
+
+        try {
+            List<PackageInfo> installed = blackBoxCore.getInstalledPackages(0, userId);
+            for (PackageInfo pi : installed) {
+                if (pi == null || pi.packageName == null) {
+                    continue;
+                }
+                String pkg = pi.packageName;
+                if (VENDING_PKG.equals(pkg) || pkg.startsWith("com.google.android.")) {
+                    return true;
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+
+        return false;
+    }
+
+    /**
+     * Best-effort cleanup: clears package data and uninstalls known Google packages
+     * for the given virtual user. Intended for "wipe" UX.
+     */
+    public static void wipeGApps(int userId) {
+        BlackBoxCore blackBoxCore = BlackBoxCore.get();
+
+        Set<String> toRemove = new HashSet<>();
+        toRemove.addAll(GOOGLE_SERVICE);
+        toRemove.addAll(GOOGLE_APP);
+
+        try {
+            List<PackageInfo> installed = blackBoxCore.getInstalledPackages(0, userId);
+            for (PackageInfo pi : installed) {
+                if (pi == null || pi.packageName == null) {
+                    continue;
+                }
+                String pkg = pi.packageName;
+                if (VENDING_PKG.equals(pkg) || pkg.startsWith("com.google.android.")) {
+                    toRemove.add(pkg);
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+
+        for (String pkg : toRemove) {
+            try {
+                blackBoxCore.clearPackage(pkg, userId);
+            } catch (Throwable ignored) {
+            }
+        }
+
+        for (String pkg : toRemove) {
+            try {
+                blackBoxCore.uninstallPackageAsUser(pkg, userId);
+            } catch (Throwable ignored) {
+            }
+        }
     }
 
     public static void remove(String packageName) {

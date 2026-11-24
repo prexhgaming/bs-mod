@@ -31,7 +31,6 @@ import java.util.Map;
 
 
 import black.android.app.BRActivityThread;
-import black.android.os.BRUserHandle;
 import me.weishu.reflection.Reflection;
 import top.niunaijun.blackbox.app.BActivityThread;
 import top.niunaijun.blackbox.app.LauncherActivity;
@@ -46,68 +45,63 @@ import top.niunaijun.blackbox.core.system.user.BUserHandle;
 import top.niunaijun.blackbox.core.system.user.BUserInfo;
 import top.niunaijun.blackbox.entity.pm.InstallOption;
 import top.niunaijun.blackbox.entity.pm.InstallResult;
-import top.niunaijun.blackbox.entity.pm.InstalledModule;
+
 import top.niunaijun.blackbox.fake.delegate.ContentProviderDelegate;
 import top.niunaijun.blackbox.fake.frameworks.BActivityManager;
 import top.niunaijun.blackbox.fake.frameworks.BJobManager;
 import top.niunaijun.blackbox.fake.frameworks.BPackageManager;
 import top.niunaijun.blackbox.fake.frameworks.BStorageManager;
 import top.niunaijun.blackbox.fake.frameworks.BUserManager;
-import top.niunaijun.blackbox.fake.frameworks.BXposedManager;
+
 import top.niunaijun.blackbox.fake.hook.HookManager;
 import top.niunaijun.blackbox.proxy.ProxyManifest;
-import top.niunaijun.blackbox.utils.FileUtils;
+import top.niunaijun.blackbox.utils.BzFileUtils;
 import top.niunaijun.blackbox.utils.ShellUtils;
 import top.niunaijun.blackbox.utils.Slog;
 import top.niunaijun.blackbox.utils.SimpleCrashFix;
 import top.niunaijun.blackbox.utils.compat.BuildCompat;
 import top.niunaijun.blackbox.utils.compat.BundleCompat;
-import top.niunaijun.blackbox.utils.compat.XposedParserCompat;
+
 import top.niunaijun.blackbox.utils.provider.ProviderCall;
 import top.niunaijun.blackbox.utils.StackTraceFilter;
 import top.niunaijun.blackbox.utils.SocialMediaAppCrashPrevention;
 import top.niunaijun.blackbox.utils.DexCrashPrevention;
 import top.niunaijun.blackbox.utils.NativeCrashPrevention;
 import top.niunaijun.blackbox.utils.CrashMonitor;
+import top.niunaijun.blackbox.utils.StoragePermissionHelper;
+import top.niunaijun.blackbox.utils.LogSender;
 
 
 
-// just use it guys and i know you forgot to give credits so have it what ever 🤧
-/**
- * updated by alex5402 on 4/9/21.
- * * ∧＿∧
- * (`･ω･∥
- * 丶　つ０
- * しーＪ
- * TFNQw5HgWUS33Ke1eNmSFTwoQySGU7XNsK (USDT TRC20)
- */
 @SuppressLint({"StaticFieldLeak", "NewApi"})
 @SuppressWarnings({"unchecked", "deprecation"})
 public class BlackBoxCore extends ClientConfiguration {
     public static final String TAG = "BlackBoxCore";
 
+    private static final int ANDROID_UID_PER_USER_RANGE = 100000;
+
     private static final BlackBoxCore sBlackBoxCore = new BlackBoxCore();
     private static Context sContext;
     
-    // Static initializer to install the simple fix at class loading time
+    
     static {
         try {
-            // Install Pine anti-detection hooks as early as possible
+            
             SimpleCrashFix.installSimpleFix();
             Slog.d(TAG, "Simple crash fix installed at class loading time");
-            // Install stack trace filter for anti-detection
+            
             StackTraceFilter.install();
             Slog.d(TAG, "Stack trace filter installed at class loading time");
-            // Install social media app crash prevention
+            
             SocialMediaAppCrashPrevention.initialize();
             Slog.d(TAG, "Social media app crash prevention initialized at class loading time");
-            // Install DEX crash prevention
+            
             DexCrashPrevention.initialize();
             Slog.d(TAG, "DEX crash prevention initialized at class loading time");
-            // Install native crash prevention
+            
             NativeCrashPrevention.initialize();
             Slog.d(TAG, "Native crash prevention initialized at class loading time");
-            // Install comprehensive crash monitoring
+            
             CrashMonitor.initialize();
             Slog.d(TAG, "Comprehensive crash monitoring initialized at class loading time");
         } catch (Exception e) {
@@ -121,20 +115,21 @@ public class BlackBoxCore extends ClientConfiguration {
     private final List<AppLifecycleCallback> mAppLifecycleCallbacks = new ArrayList<>();
     private final Handler mHandler = new Handler(Looper.getMainLooper());
     private final int mHostUid = Process.myUid();
-    private final int mHostUserId = BRUserHandle.get().myUserId();
+    private final int mHostUserId = mHostUid / ANDROID_UID_PER_USER_RANGE;
 
     private boolean mServicesInitialized = false;
     private long mLastServiceInitAttempt = 0;
-    private static final long SERVICE_INIT_TIMEOUT_MS = 10000; // 10 seconds
+    private static final long SERVICE_INIT_TIMEOUT_MS = 10000; 
     
-    // Add callback mechanism for service availability
+    
     private final List<Runnable> mServiceAvailableCallbacks = new ArrayList<>();
     private final Object mServiceCallbackLock = new Object();
 
-    // Enhanced UID management for sandboxed environments
+    
     private int mCurrentAppUid = -1;
     private String mCurrentAppPackage = null;
     private boolean mIsSandboxedEnvironment = false;
+    private String mProcessName;
 
     public static BlackBoxCore get() {
         return sBlackBoxCore;
@@ -172,12 +167,12 @@ public class BlackBoxCore extends ClientConfiguration {
         mExceptionHandler = exceptionHandler;
     }
 
-    // Enhanced UID management methods
+    
     public void setCurrentAppUid(int uid, String packageName) {
         mCurrentAppUid = uid;
         mCurrentAppPackage = packageName;
         
-        // Detect sandboxed environment
+        
         if (uid != mHostUid && uid > Process.FIRST_APPLICATION_UID && uid < Process.LAST_APPLICATION_UID) {
             mIsSandboxedEnvironment = true;
             Slog.d("BlackBoxCore", "Detected sandboxed environment for " + packageName + " with UID: " + uid);
@@ -196,26 +191,26 @@ public class BlackBoxCore extends ClientConfiguration {
         return mIsSandboxedEnvironment;
     }
 
-    // Enhanced UID resolution for security-sensitive operations
+    
     public int resolveUidForOperation(int originalUid, String operation) {
         try {
-            // System UIDs should remain unchanged
+            
             if (originalUid > 0 && originalUid < Process.FIRST_APPLICATION_UID) {
                 return originalUid;
             }
             
-            // Non-user app UIDs should remain unchanged
+            
             if (originalUid > Process.LAST_APPLICATION_UID) {
                 return originalUid;
             }
 
-            // If we're in a sandboxed environment, use the current app UID
+            
             if (mIsSandboxedEnvironment && mCurrentAppUid > 0) {
                 Slog.d("BlackBoxCore", "Resolving UID for " + operation + ": " + originalUid + " -> " + mCurrentAppUid);
                 return mCurrentAppUid;
             }
 
-            // Default behavior for non-sandboxed environments
+            
             return originalUid;
         } catch (Exception e) {
             Slog.e("BlackBoxCore", "Error resolving UID for " + operation + ": " + e.getMessage());
@@ -229,19 +224,19 @@ public class BlackBoxCore extends ClientConfiguration {
         }
         
         try {
-            // First, try to check if the black process is running
+            
             if (isMainProcess() && !isBlackProcessRunning()) {
                 Slog.w(TAG, "Black process not running, starting it and using fallback services...");
                 startBlackProcess();
                 
-                // Initialize services with fallbacks
+                
                 String[] serviceNames = {
                     ServiceManager.ACTIVITY_MANAGER,
                     ServiceManager.PACKAGE_MANAGER,
                     ServiceManager.STORAGE_MANAGER,
                     ServiceManager.USER_MANAGER,
                     ServiceManager.JOB_MANAGER,
-                    ServiceManager.XPOSED_MANAGER,
+
                     ServiceManager.ACCOUNT_MANAGER,
                     ServiceManager.LOCATION_MANAGER,
                     ServiceManager.NOTIFICATION_MANAGER
@@ -260,19 +255,19 @@ public class BlackBoxCore extends ClientConfiguration {
                 
                 mServicesInitialized = true;
                 Slog.d(TAG, "Services initialized with fallbacks");
-                // Notify callbacks that services are available
+                
                 notifyServiceAvailableCallbacks();
                 return true;
             }
             
-            // Try to initialize services normally
+            
             String[] serviceNames = {
                 ServiceManager.ACTIVITY_MANAGER,
                 ServiceManager.PACKAGE_MANAGER,
                 ServiceManager.STORAGE_MANAGER,
                 ServiceManager.USER_MANAGER,
                 ServiceManager.JOB_MANAGER,
-                ServiceManager.XPOSED_MANAGER,
+
                 ServiceManager.ACCOUNT_MANAGER,
                 ServiceManager.LOCATION_MANAGER,
                 ServiceManager.NOTIFICATION_MANAGER
@@ -283,7 +278,7 @@ public class BlackBoxCore extends ClientConfiguration {
                     getServiceInternal(serviceName);
                 } catch (Exception e) {
                     Slog.w(TAG, "Failed to initialize service: " + serviceName + ", trying fallback", e);
-                    // Try fallback if normal initialization fails
+                    
                     IBinder fallbackService = createFallbackService(serviceName);
                     if (fallbackService != null) {
                         mServices.put(serviceName, fallbackService);
@@ -293,11 +288,11 @@ public class BlackBoxCore extends ClientConfiguration {
             
             Slog.d(TAG, "Services initialized successfully");
             mServicesInitialized = true;
-            // Notify callbacks that services are available
+            
             notifyServiceAvailableCallbacks();
         } catch (Exception e) {
             Slog.e(TAG, "Failed to initialize services, using fallbacks: " + e.getMessage());
-            // Even if initialization fails, try to create fallback services
+            
             try {
                 String[] serviceNames = {
                     ServiceManager.ACTIVITY_MANAGER,
@@ -305,7 +300,7 @@ public class BlackBoxCore extends ClientConfiguration {
                     ServiceManager.STORAGE_MANAGER,
                     ServiceManager.USER_MANAGER,
                     ServiceManager.JOB_MANAGER,
-                    ServiceManager.XPOSED_MANAGER,
+
                     ServiceManager.ACCOUNT_MANAGER,
                     ServiceManager.LOCATION_MANAGER,
                     ServiceManager.NOTIFICATION_MANAGER
@@ -324,7 +319,7 @@ public class BlackBoxCore extends ClientConfiguration {
                 
                 mServicesInitialized = true;
                 Slog.d(TAG, "Services initialized with fallbacks after error");
-                // Notify callbacks that services are available
+                
                 notifyServiceAvailableCallbacks();
                 return true;
             } catch (Exception fallbackEx) {
@@ -351,12 +346,12 @@ public class BlackBoxCore extends ClientConfiguration {
             return binder;
         }
         
-        // Check if we're in the main process and trying to access services
-        // If so, we need to ensure the black process is running first
+        
+        
         if (isMainProcess() && !isBlackProcessRunning()) {
             Slog.w(TAG, "Main process trying to access service " + name + " but black process not running, starting it...");
             startBlackProcess();
-            // Wait a bit for the process to start, but with timeout
+            
             try {
                 Thread.sleep(1000);
             } catch (InterruptedException e) {
@@ -364,20 +359,20 @@ public class BlackBoxCore extends ClientConfiguration {
             }
         }
         
-        // Add timeout for provider calls to prevent hanging
+        
         long startTime = System.currentTimeMillis();
-        long timeout = 3000; // 3 seconds timeout
+        long timeout = 3000; 
         
         try {
             Bundle bundle = new Bundle();
             bundle.putString("_B_|_server_name_", name);
             
-            // Try to call the provider with timeout
+            
             Bundle vm = null;
             try {
                 vm = ProviderCall.callSafely(ProxyManifest.getBindProvider(), "VM", null, bundle);
             } catch (Exception e) {
-                // If provider call fails, check if we've exceeded timeout
+                
                 if (System.currentTimeMillis() - startTime > timeout) {
                     Slog.w(TAG, "Provider call timeout for service: " + name + ", using fallback");
                     return createFallbackService(name);
@@ -387,7 +382,7 @@ public class BlackBoxCore extends ClientConfiguration {
             
             if (vm == null) {
                 Slog.w(TAG, "Provider call returned null for service: " + name);
-                // Try to create a fallback service if possible
+                
                 return createFallbackService(name);
             }
             
@@ -397,7 +392,7 @@ public class BlackBoxCore extends ClientConfiguration {
                 mServices.put(name, binder);
             } else {
                 Slog.w(TAG, "Failed to get binder for service: " + name);
-                // Try to create a fallback service
+                
                 return createFallbackService(name);
             }
             return binder;
@@ -407,13 +402,11 @@ public class BlackBoxCore extends ClientConfiguration {
         }
     }
     
-    /**
-     * Create a fallback service when the main service is not available
-     */
+    
     private IBinder createFallbackService(String name) {
         try {
-            // Don't call ServiceManager.getService here to avoid circular dependency
-            // Instead, just return null and let the caller handle it
+            
+            
             Slog.w(TAG, "No fallback available for service: " + name + " (avoiding circular dependency)");
             return null;
         } catch (Exception e) {
@@ -424,16 +417,14 @@ public class BlackBoxCore extends ClientConfiguration {
     
 
     
-    /**
-     * Check if the black process is running
-     */
+    
     private boolean isBlackProcessRunning() {
         try {
-            // Try to access the SystemCallProvider to see if it's available
+            
             Bundle testBundle = new Bundle();
             testBundle.putString("_B_|_server_name_", "test");
             
-            // Use a more robust provider check with better error handling
+            
             try {
                 Bundle result = ProviderCall.callSafely(ProxyManifest.getBindProvider(), "VM", null, testBundle);
                 if (result != null) {
@@ -444,23 +435,23 @@ public class BlackBoxCore extends ClientConfiguration {
                 Slog.w(TAG, "Provider call failed: " + e.getMessage());
             }
             
-            // Fallback: Check if the provider authority exists
+            
             try {
                 String authority = ProxyManifest.getBindProvider();
                 if (authority != null && !authority.isEmpty()) {
-                    // Try to resolve the provider
+                    
                     android.content.pm.ProviderInfo providerInfo = getContext().getPackageManager()
                         .resolveContentProvider(authority, 0);
                     if (providerInfo != null) {
                         Slog.d(TAG, "Provider exists but call failed - black process may be starting");
-                        return false; // Provider exists but not accessible yet
+                        return false; 
                     }
                 }
             } catch (Exception e) {
                 Slog.w(TAG, "Provider resolution failed: " + e.getMessage());
             }
             
-            // Additional fallback: Check if DaemonService is running
+            
             try {
                 android.app.ActivityManager am = (android.app.ActivityManager) getContext()
                     .getSystemService(Context.ACTIVITY_SERVICE);
@@ -485,26 +476,24 @@ public class BlackBoxCore extends ClientConfiguration {
         }
     }
     
-    /**
-     * Start the black process if it's not running
-     */
+    
     private void startBlackProcess() {
         try {
             Slog.d(TAG, "Starting black process...");
             
-            // Check if we're in a valid state to start services
+            
             if (!isValidProcessState()) {
                 Slog.w(TAG, "Process state is invalid, delaying service start");
-                // Schedule a delayed retry
+                
                 scheduleDelayedServiceStart();
                 return;
             }
             
-            // Start the DaemonService which should be in the black process
+            
             Intent intent = new Intent();
             intent.setClass(getContext(), DaemonService.class);
             
-            // Add flags to help with process startup
+            
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             
             boolean serviceStarted = false;
@@ -514,12 +503,12 @@ public class BlackBoxCore extends ClientConfiguration {
                 try {
                     if (retry > 0) {
                         Slog.d(TAG, "Retry attempt " + (retry + 1) + " for starting DaemonService");
-                        // Use non-blocking delay instead of Thread.sleep
+                        
                         if (retry == 1) {
-                            // For first retry, just continue immediately
+                            
                             Slog.d(TAG, "First retry - continuing immediately");
                         } else {
-                            // For subsequent retries, schedule delayed execution
+                            
                             scheduleDelayedRetry(intent, retry);
                             return;
                         }
@@ -561,40 +550,38 @@ public class BlackBoxCore extends ClientConfiguration {
             
             if (!serviceStarted) {
                 Slog.e(TAG, "Failed to start DaemonService after " + maxRetries + " attempts");
-                // Try alternative startup methods
+                
                 tryAlternativeStartupMethods();
                 return;
             }
             
-            // Schedule provider check asynchronously instead of blocking
+            
             scheduleProviderCheck();
             
             Slog.d(TAG, "Started DaemonService to initialize black process");
         } catch (Exception e) {
             Slog.e(TAG, "Failed to start black process", e);
-            // Schedule a delayed retry
+            
             scheduleDelayedServiceStart();
         }
     }
     
-    /**
-     * Check if the current process state is valid for starting services
-     */
+    
     private boolean isValidProcessState() {
         try {
-            // Check if the context is valid
+            
             if (getContext() == null) {
                 Slog.w(TAG, "Context is null, process state invalid");
                 return false;
             }
             
-            // Check if we're in the main process
+            
             if (!isMainProcess()) {
                 Slog.w(TAG, "Not in main process, skipping service start");
                 return false;
             }
             
-            // Check if the process is in a good state
+            
             try {
                 getContext().getPackageName();
             } catch (Exception e) {
@@ -609,9 +596,7 @@ public class BlackBoxCore extends ClientConfiguration {
         }
     }
     
-    /**
-     * Schedule a delayed retry for service startup
-     */
+    
     private void scheduleDelayedRetry(Intent intent, int retry) {
         try {
             int delayMs = 1000 * retry;
@@ -631,7 +616,7 @@ public class BlackBoxCore extends ClientConfiguration {
                         Slog.d(TAG, "Delayed retry successful");
                     } catch (Exception e) {
                         Slog.e(TAG, "Delayed retry failed: " + e.getMessage());
-                        // Try alternative methods
+                        
                         tryAlternativeStartupMethods();
                     }
                 }
@@ -639,14 +624,12 @@ public class BlackBoxCore extends ClientConfiguration {
             
         } catch (Exception e) {
             Slog.w(TAG, "Failed to schedule delayed retry: " + e.getMessage());
-            // Fall back to alternative methods immediately
+            
             tryAlternativeStartupMethods();
         }
     }
     
-    /**
-     * Schedule provider check asynchronously
-     */
+    
     private void scheduleProviderCheck() {
         try {
             android.os.Handler handler = new android.os.Handler(android.os.Looper.getMainLooper());
@@ -654,7 +637,7 @@ public class BlackBoxCore extends ClientConfiguration {
                 @Override
                 public void run() {
                     try {
-                        // Try to access the provider to ensure it's working
+                        
                         Bundle testBundle = new Bundle();
                         testBundle.putString("_B_|_server_name_", "test");
                         Bundle result = ProviderCall.callSafely(ProxyManifest.getBindProvider(), "VM", null, testBundle);
@@ -667,36 +650,32 @@ public class BlackBoxCore extends ClientConfiguration {
                         Slog.w(TAG, "SystemCallProvider not accessible yet, will retry later: " + e.getMessage());
                     }
                 }
-            }, 1000); // 1 second delay
+            }, 1000); 
             
         } catch (Exception e) {
             Slog.w(TAG, "Failed to schedule provider check: " + e.getMessage());
         }
     }
     
-    /**
-     * Handle service startup failures with appropriate recovery actions
-     */
+    
     private void handleServiceStartFailure(int retry, int maxRetries, Exception e) {
         if (retry < maxRetries - 1) {
             Slog.w(TAG, "Service start failed, will retry. Attempt " + (retry + 1) + " of " + maxRetries);
         } else {
             Slog.e(TAG, "Service start failed after " + maxRetries + " attempts: " + e.getMessage());
-            // Try alternative startup methods
+            
             tryAlternativeStartupMethods();
         }
     }
     
-    /**
-     * Handle "process is bad" errors with recovery strategies
-     */
+    
     private void handleProcessBadError(int retry, int maxRetries) {
         if (retry < maxRetries - 1) {
             Slog.w(TAG, "Process is bad, attempting recovery. Attempt " + (retry + 1) + " of " + maxRetries);
             
-            // Try to recover the process state
+            
             try {
-                // Schedule recovery instead of blocking
+                
                 scheduleProcessRecovery(retry, maxRetries);
                 
             } catch (Exception e) {
@@ -704,17 +683,15 @@ public class BlackBoxCore extends ClientConfiguration {
             }
         } else {
             Slog.e(TAG, "Process recovery failed after " + maxRetries + " attempts");
-            // Try alternative startup methods
+            
             tryAlternativeStartupMethods();
         }
     }
     
-    /**
-     * Schedule process recovery asynchronously
-     */
+    
     private void scheduleProcessRecovery(int retry, int maxRetries) {
         try {
-            int delayMs = 2000; // 2 second delay for process recovery
+            int delayMs = 2000; 
             Slog.d(TAG, "Scheduling process recovery in " + delayMs + "ms");
             
             android.os.Handler handler = new android.os.Handler(android.os.Looper.getMainLooper());
@@ -723,10 +700,10 @@ public class BlackBoxCore extends ClientConfiguration {
                 public void run() {
                     try {
                         Slog.d(TAG, "Executing process recovery");
-                        // Try to refresh the context
+                        
                         refreshProcessContext();
                         
-                        // Retry the service start
+                        
                         if (isMainProcess() && !isBlackProcessRunning()) {
                             startBlackProcess();
                         }
@@ -742,14 +719,12 @@ public class BlackBoxCore extends ClientConfiguration {
         }
     }
     
-    /**
-     * Try alternative methods to start the service
-     */
+    
     private void tryAlternativeStartupMethods() {
         Slog.w(TAG, "Trying alternative startup methods...");
         
         try {
-            // Method 1: Try using a different context
+            
             Context alternativeContext = getAlternativeContext();
             if (alternativeContext != null) {
                 Intent intent = new Intent();
@@ -763,7 +738,7 @@ public class BlackBoxCore extends ClientConfiguration {
         }
         
         try {
-            // Method 2: Try using application context
+            
             Context appContext = getContext().getApplicationContext();
             if (appContext != null && appContext != getContext()) {
                 Intent intent = new Intent();
@@ -779,12 +754,10 @@ public class BlackBoxCore extends ClientConfiguration {
         Slog.e(TAG, "All alternative startup methods failed");
     }
     
-    /**
-     * Get an alternative context for service startup
-     */
+    
     private Context getAlternativeContext() {
         try {
-            // Try to get the application context
+            
             Context appContext = getContext().getApplicationContext();
             if (appContext != null) {
                 return appContext;
@@ -796,28 +769,24 @@ public class BlackBoxCore extends ClientConfiguration {
         return null;
     }
     
-    /**
-     * Refresh the process context to recover from bad state
-     */
+    
     private void refreshProcessContext() {
         try {
-            // This is a placeholder for context refresh logic
-            // In a real implementation, you might want to reinitialize certain components
+            
+            
             Slog.d(TAG, "Attempting to refresh process context");
             
-            // No blocking operations - just log and continue
+            
             
         } catch (Exception e) {
             Slog.w(TAG, "Context refresh failed: " + e.getMessage());
         }
     }
     
-    /**
-     * Schedule a delayed service start for later
-     */
+    
     private void scheduleDelayedServiceStart() {
         try {
-            // Schedule a delayed retry using a handler
+            
             android.os.Handler handler = new android.os.Handler(android.os.Looper.getMainLooper());
             handler.postDelayed(new Runnable() {
                 @Override
@@ -827,7 +796,7 @@ public class BlackBoxCore extends ClientConfiguration {
                         startBlackProcess();
                     }
                 }
-            }, 5000); // 5 second delay
+            }, 5000); 
             
             Slog.d(TAG, "Scheduled delayed service start in 5 seconds");
         } catch (Exception e) {
@@ -835,15 +804,13 @@ public class BlackBoxCore extends ClientConfiguration {
         }
     }
     
-    /**
-     * Ensure the black process is properly initialized
-     */
+    
     public void ensureBlackProcessInitialized() {
         if (isMainProcess() && !isBlackProcessRunning()) {
             Slog.w(TAG, "Ensuring black process is initialized...");
             startBlackProcess();
             
-            // Wait for the process to be ready
+            
             int maxRetries = 5;
             int retryCount = 0;
             while (retryCount < maxRetries && !isBlackProcessRunning()) {
@@ -866,33 +833,11 @@ public class BlackBoxCore extends ClientConfiguration {
 
     public void doAttachBaseContext(Context context,
                                    ClientConfiguration clientConfiguration) {
-        try {
-            // Set essential properties for the context
-            setEssentialProperties(context, clientConfiguration);
-            
-            // Try to disable window leak warnings via reflection
-            try {
-                Class<?> windowManagerClass = Class.forName("android.view.WindowManager");
-                Field ignoreLeaksField = windowManagerClass.getDeclaredField("mIgnoreWindowLeaks");
-                ignoreLeaksField.setAccessible(true);
-                // This might not work, but worth trying
-            } catch (Exception e) {
-                Slog.w(TAG, "Could not access WindowManager leak field: " + e.getMessage());
-            }
-            
-        } catch (Exception e) {
-            Slog.w(TAG, "Failed to set essential properties: " + e.getMessage());
-        }
-
         sContext = context;
         mClientConfiguration = clientConfiguration;
-        
-        // Install system hooks to prevent crashes
-        installSystemHooks();
-        
-        initNotificationManager();
 
-        String processName = getProcessName(getContext());
+        final String processName = getProcessName(context);
+        mProcessName = processName;
         if (processName.equals(BlackBoxCore.getHostPkg())) {
             mProcessType = ProcessType.Main;
             startLogcat();
@@ -901,20 +846,45 @@ public class BlackBoxCore extends ClientConfiguration {
         } else {
             mProcessType = ProcessType.BAppClient;
         }
+
+        Slog.i(TAG, "Process detected: name=" + processName + ", hostPkg=" + BlackBoxCore.getHostPkg() + ", type=" + mProcessType);
+
+        try {
+            setEssentialProperties(context, clientConfiguration, mProcessType == ProcessType.Main);
+
+            if (mProcessType == ProcessType.Main) {
+                Slog.i(TAG, "Main process: skipped native blackbox resource/hideapi hooks");
+            }
+
+            try {
+                Class<?> windowManagerClass = Class.forName("android.view.WindowManager");
+                Field ignoreLeaksField = windowManagerClass.getDeclaredField("mIgnoreWindowLeaks");
+                ignoreLeaksField.setAccessible(true);
+
+            } catch (Exception e) {
+                Slog.w(TAG, "Could not access WindowManager leak field: " + e.getMessage());
+            }
+
+        } catch (Exception e) {
+            Slog.w(TAG, "Failed to set essential properties: " + e.getMessage());
+        }
+
+        installSystemHooks();
+        initNotificationManager();
         if (BlackBoxCore.get().isBlackProcess()) {
             BEnvironment.load();
             if (processName.endsWith("p0")) {
-//                android.os.Debug.waitForDebugger();
+
             }
-//            android.os.Debug.waitForDebugger();
+
         }
         if (isServerProcess()) {
             if (clientConfiguration.isEnableDaemonService()) {
                 try {
-                    // Check if we're in a valid state to start services
+                    
                     if (!isValidProcessState()) {
                         Slog.w(TAG, "Server process state is invalid, delaying service start");
-                        // Schedule a delayed retry for server process
+                        
                         scheduleDelayedServerServiceStart();
                         return;
                     }
@@ -922,7 +892,7 @@ public class BlackBoxCore extends ClientConfiguration {
                     Intent intent = new Intent();
                     intent.setClass(getContext(), DaemonService.class);
                     
-                    // Add flags to help with process startup
+                    
                     intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
                     
                     boolean serviceStarted = false;
@@ -932,12 +902,12 @@ public class BlackBoxCore extends ClientConfiguration {
                         try {
                             if (retry > 0) {
                                 Slog.d(TAG, "Retry attempt " + (retry + 1) + " for starting DaemonService in server process");
-                                // Use non-blocking delay instead of Thread.sleep
+                                
                                 if (retry == 1) {
-                                    // For first retry, just continue immediately
+                                    
                                     Slog.d(TAG, "First retry for server process - continuing immediately");
                                 } else {
-                                    // For subsequent retries, schedule delayed execution
+                                    
                                     scheduleDelayedServerRetry(intent, retry);
                                     return;
                                 }
@@ -979,56 +949,56 @@ public class BlackBoxCore extends ClientConfiguration {
                     
                     if (!serviceStarted) {
                         Slog.e(TAG, "Failed to start DaemonService in server process after " + maxRetries + " attempts");
-                        // Try alternative startup methods for server process
+                        
                         tryAlternativeServerStartupMethods();
                     }
                     
                 } catch (Exception e) {
                     Slog.e(TAG, "Unexpected error starting DaemonService in server process: " + e.getMessage(), e);
-                    // Schedule a delayed retry
+                    
                     scheduleDelayedServerServiceStart();
                 }
             }
         }
         
-        // Initialize VPN service for internet access
+        
         initVpnService();
         
         HookManager.get().init();
     }
 
     public void doCreate() {
-        // Install system hooks to prevent crashes
+        
         installSystemHooks();
         
-        // Set a timeout for the entire initialization process
+        
         long startTime = System.currentTimeMillis();
-        long maxInitTime = 10000; // 10 seconds max
+        long maxInitTime = 10000; 
         
         try {
-            // Ensure black process is initialized before proceeding
+            
             ensureBlackProcessInitialized();
             
-            // Check if we've exceeded the timeout
+            
             if (System.currentTimeMillis() - startTime > maxInitTime) {
                 Slog.w(TAG, "Initialization timeout exceeded, proceeding with fallback services");
             }
             
             ensureProperInitialization();
             
-            // fix contentProvider
+            
             if (isBlackProcess()) {
                 ContentProviderDelegate.init();
             }
             if (!isServerProcess()) {
-                // Initialize the ServiceManager to ensure services are available
+                
                 try {
                     ServiceManager.initBlackManager();
                 } catch (Exception e) {
                     Slog.w(TAG, "Failed to initialize ServiceManager, continuing with fallback: " + e.getMessage());
                 }
                 
-                // Reset transaction throttler on startup
+                
                 getBPackageManager().resetTransactionThrottler();
             }
             
@@ -1039,7 +1009,7 @@ public class BlackBoxCore extends ClientConfiguration {
             long totalTime = System.currentTimeMillis() - startTime;
             Slog.e(TAG, "BlackBox initialization failed after " + totalTime + "ms", e);
             
-            // Try to continue with fallback services
+            
             try {
                 if (!isServerProcess()) {
                     ServiceManager.initBlackManager();
@@ -1077,9 +1047,78 @@ public class BlackBoxCore extends ClientConfiguration {
     public static BStorageManager getBStorageManager() {
         return BStorageManager.get();
     }
+    
+    
+    
+    
+    public boolean hasStoragePermission() {
+        return StoragePermissionHelper.hasStoragePermission(sContext);
+    }
+    
+    
+    public boolean hasAllFilesAccess() {
+        return StoragePermissionHelper.hasAllFilesAccess();
+    }
+    
+    
+    public boolean hasFullFileAccess() {
+        return StoragePermissionHelper.hasFullFileAccess(sContext);
+    }
+    
+    
+    public void requestStoragePermission(android.app.Activity activity) {
+        StoragePermissionHelper.requestStoragePermission(activity);
+    }
+    
+    
+    public void requestAllFilesAccess(android.app.Activity activity) {
+        StoragePermissionHelper.requestAllFilesAccess(activity);
+    }
+    
+    
+    public void requestFullFileAccess(android.app.Activity activity) {
+        StoragePermissionHelper.requestFullFileAccess(activity);
+    }
+    
+    
+    public boolean handleStoragePermissionResult(android.app.Activity activity, int requestCode, 
+            String[] permissions, int[] grantResults) {
+        return StoragePermissionHelper.handlePermissionResult(activity, requestCode, permissions, grantResults);
+    }
+    
+    
+    public boolean handleAllFilesAccessResult(int requestCode) {
+        return StoragePermissionHelper.handleAllFilesAccessResult(requestCode);
+    }
+    
+    
+    public static int getStoragePermissionRequestCode() {
+        return StoragePermissionHelper.REQUEST_CODE_STORAGE_PERMISSION;
+    }
+    
+    public static int getAllFilesAccessRequestCode() {
+        return StoragePermissionHelper.REQUEST_CODE_MANAGE_STORAGE;
+    }
 
     public boolean launchApk(String packageName, int userId) {
-        onBeforeMainLaunchApk(packageName,userId);
+        onBeforeMainLaunchApk(packageName, userId);
+        
+        
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            if (!hasAllFilesAccess()) {
+                Slog.w(TAG, "All files access not granted for launching: " + packageName);
+                
+                for (AppLifecycleCallback callback : mAppLifecycleCallbacks) {
+                    if (callback.onStoragePermissionNeeded(packageName, userId)) {
+                        
+                        Slog.d(TAG, "Launch cancelled - host app handling permission request");
+                        return false;
+                    }
+                }
+                
+                Slog.w(TAG, "Launching without all files access - some file operations may fail");
+            }
+        }
 
         Intent launchIntentForPackage = getBPackageManager().getLaunchIntentForPackage(packageName, userId);
         if (launchIntentForPackage == null) {
@@ -1102,7 +1141,7 @@ public class BlackBoxCore extends ClientConfiguration {
 
     public InstallResult installPackageAsUser(String packageName, int userId) {
         try {
-            // Prevent cloning BlackBox app from within BlackBox
+            
             if (packageName.equals(getHostPkg())) {
                 return new InstallResult().installError("Cannot clone BlackBox app from within BlackBox. This would create infinite recursion and is not allowed for security reasons.");
             }
@@ -1116,7 +1155,7 @@ public class BlackBoxCore extends ClientConfiguration {
     }
 
     public InstallResult installPackageAsUser(File apk, int userId) {
-        // Check if this is a BlackBox-related APK
+        
         try {
             PackageInfo packageInfo = getPackageManager().getPackageArchiveInfo(apk.getAbsolutePath(), 0);
             if (packageInfo != null) {
@@ -1126,7 +1165,7 @@ public class BlackBoxCore extends ClientConfiguration {
                 }
             }
         } catch (Exception e) {
-            // If we can't check the package info, proceed but log a warning
+            
             Slog.w(TAG, "Could not verify package info for APK: " + apk.getAbsolutePath());
         }
         
@@ -1134,62 +1173,13 @@ public class BlackBoxCore extends ClientConfiguration {
     }
 
     public InstallResult installPackageAsUser(Uri apk, int userId) {
-        // For URI installations, we can't easily check the package name, so we'll rely on the BPackageManagerService check
+        
         return getBPackageManager().installPackageAsUser(apk.toString(), InstallOption.installByStorage().makeUriFile(), userId);
     }
 
-    public InstallResult installXPModule(File apk) {
-        return getBPackageManager().installPackageAsUser(apk.getAbsolutePath(), InstallOption.installByStorage().makeXposed(), BUserHandle.USER_XPOSED);
-    }
 
-    public InstallResult installXPModule(Uri apk) {
-        return getBPackageManager().installPackageAsUser(apk.toString(), InstallOption.installByStorage()
-                .makeXposed()
-                .makeUriFile(), BUserHandle.USER_XPOSED);
-    }
 
-    public InstallResult installXPModule(String packageName) {
-        try {
-            PackageInfo packageInfo = getPackageManager().getPackageInfo(packageName, 0);
-            String path = packageInfo.applicationInfo.sourceDir;
-            return getBPackageManager().installPackageAsUser(path, InstallOption.installBySystem().makeXposed(), BUserHandle.USER_XPOSED);
-        } catch (PackageManager.NameNotFoundException e) {
-            e.printStackTrace();
-            return new InstallResult().installError(e.getMessage());
-        }
-    }
 
-    public void uninstallXPModule(String packageName) {
-        uninstallPackage(packageName);
-    }
-
-    public boolean isXPEnable() {
-        return BXposedManager.get().isXPEnable();
-    }
-
-    public void setXPEnable(boolean enable) {
-        BXposedManager.get().setXPEnable(enable);
-    }
-
-    public boolean isXposedModule(File file) {
-        return XposedParserCompat.isXPModule(file.getAbsolutePath());
-    }
-
-    public boolean isInstalledXposedModule(String packageName) {
-        return isInstalled(packageName, BUserHandle.USER_XPOSED);
-    }
-
-    public boolean isModuleEnable(String packageName) {
-        return BXposedManager.get().isModuleEnable(packageName);
-    }
-
-    public void setModuleEnable(String packageName, boolean enable) {
-        BXposedManager.get().setModuleEnable(packageName, enable);
-    }
-
-    public List<InstalledModule> getInstalledXPModules() {
-        return BXposedManager.get().getInstalledModules();
-    }
 
     public List<ApplicationInfo> getInstalledApplications(int flags, int userId) {
         return getBPackageManager().getInstalledApplications(flags, userId);
@@ -1239,6 +1229,10 @@ public class BlackBoxCore extends ClientConfiguration {
         return GmsCore.isInstalledGoogleService(userId);
     }
 
+    public boolean hasGmsTraces(int userId) {
+        return GmsCore.hasGmsTraces(userId);
+    }
+
     public InstallResult installGms(int userId) {
         return GmsCore.installGApps(userId);
     }
@@ -1248,21 +1242,18 @@ public class BlackBoxCore extends ClientConfiguration {
         return !GmsCore.isInstalledGoogleService(userId);
     }
 
-    /**
-     * Process type
-     */
+    public boolean wipeGms(int userId) {
+        GmsCore.wipeGApps(userId);
+        return !GmsCore.hasGmsTraces(userId);
+    }
+
+    
     private enum ProcessType {
-        /**
-         * Server process
-         */
+        
         Server,
-        /**
-         * Black app process
-         */
+        
         BAppClient,
-        /**
-         * Main process
-         */
+        
         Main,
     }
 
@@ -1284,9 +1275,11 @@ public class BlackBoxCore extends ClientConfiguration {
     }
 
     @Override
-    public boolean isHideXposed() {
-        return mClientConfiguration.isHideXposed();
+    public boolean isDisableFlagSecure() {
+        return mClientConfiguration.isDisableFlagSecure();
     }
+
+
 
     @Override
     public String getHostPackageName() {
@@ -1304,9 +1297,13 @@ public class BlackBoxCore extends ClientConfiguration {
             Context context = getContext();
             String fileName = context.getPackageName() + "_logcat.txt";
             boolean useMediaStore = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q;
+            
+            
+            logDeviceInfo();
+            
             try {
                 if (useMediaStore) {
-                    // Use MediaStore for Android 10+
+                    
                     android.content.ContentValues values = new android.content.ContentValues();
                     values.put(android.provider.MediaStore.Downloads.DISPLAY_NAME, fileName);
                     values.put(android.provider.MediaStore.Downloads.MIME_TYPE, "text/plain");
@@ -1314,7 +1311,7 @@ public class BlackBoxCore extends ClientConfiguration {
                     android.net.Uri uri = context.getContentResolver().insert(android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI, values);
                     if (uri != null) {
                         try (java.io.OutputStream out = context.getContentResolver().openOutputStream(uri)) {
-                            // Clear logcat and dump to output stream
+                            
                             ShellUtils.execCommand("logcat -c", false);
                             java.lang.Process process = Runtime.getRuntime().exec("logcat");
                             try (java.io.InputStream in = process.getInputStream()) {
@@ -1327,13 +1324,13 @@ public class BlackBoxCore extends ClientConfiguration {
                         }
                     }
                 } else {
-                    // Use app-private external files dir for Android 9 and below
+                    
                     File docuentsdir = new File(context.getExternalFilesDir(Environment.DIRECTORY_DOCUMENTS), "logs");
                     if (!docuentsdir.exists()) {
                         docuentsdir.mkdirs();
                     }
                     logFile = new File(docuentsdir, fileName);
-                    FileUtils.deleteDir(logFile);
+                    BzFileUtils.deleteDir(logFile);
                     ShellUtils.execCommand("logcat -c", false);
                     ShellUtils.execCommand("logcat -f " + logFile.getAbsolutePath(), false);
                 }
@@ -1343,12 +1340,101 @@ public class BlackBoxCore extends ClientConfiguration {
         }).start();
     }
 
+    
+    private void logDeviceInfo() {
+        try {
+            Slog.i(TAG, "╔══════════════════════════════════════════════════════════════╗");
+            Slog.i(TAG, "║                    DEVICE INFORMATION                        ║");
+            Slog.i(TAG, "╠══════════════════════════════════════════════════════════════╣");
+            
+            
+            Slog.i(TAG, "║ Android Version: " + Build.VERSION.RELEASE);
+            Slog.i(TAG, "║ SDK Level: " + Build.VERSION.SDK_INT);
+            Slog.i(TAG, "║ Build ID: " + Build.ID);
+            Slog.i(TAG, "║ Build Display: " + Build.DISPLAY);
+            
+            
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                Slog.i(TAG, "║ Security Patch: " + Build.VERSION.SECURITY_PATCH);
+            }
+            
+            
+            Slog.i(TAG, "╠══════════════════════════════════════════════════════════════╣");
+            Slog.i(TAG, "║ Manufacturer: " + Build.MANUFACTURER);
+            Slog.i(TAG, "║ Brand: " + Build.BRAND);
+            Slog.i(TAG, "║ Model: " + Build.MODEL);
+            Slog.i(TAG, "║ Device: " + Build.DEVICE);
+            Slog.i(TAG, "║ Product: " + Build.PRODUCT);
+            Slog.i(TAG, "║ Board: " + Build.BOARD);
+            Slog.i(TAG, "║ Hardware: " + Build.HARDWARE);
+            
+            
+            Slog.i(TAG, "╠══════════════════════════════════════════════════════════════╣");
+            Slog.i(TAG, "║ Supported ABIs: " + String.join(", ", Build.SUPPORTED_ABIS));
+            if (Build.SUPPORTED_32_BIT_ABIS.length > 0) {
+                Slog.i(TAG, "║ 32-bit ABIs: " + String.join(", ", Build.SUPPORTED_32_BIT_ABIS));
+            }
+            if (Build.SUPPORTED_64_BIT_ABIS.length > 0) {
+                Slog.i(TAG, "║ 64-bit ABIs: " + String.join(", ", Build.SUPPORTED_64_BIT_ABIS));
+            }
+            
+            
+            Slog.i(TAG, "╠══════════════════════════════════════════════════════════════╣");
+            Slog.i(TAG, "║ Fingerprint: " + Build.FINGERPRINT);
+            Slog.i(TAG, "║ Type: " + Build.TYPE);
+            Slog.i(TAG, "║ Tags: " + Build.TAGS);
+            
+            
+            try {
+                Runtime runtime = Runtime.getRuntime();
+                long maxMem = runtime.maxMemory() / (1024 * 1024);
+                long totalMem = runtime.totalMemory() / (1024 * 1024);
+                long freeMem = runtime.freeMemory() / (1024 * 1024);
+                Slog.i(TAG, "╠══════════════════════════════════════════════════════════════╣");
+                Slog.i(TAG, "║ Max Heap: " + maxMem + " MB");
+                Slog.i(TAG, "║ Total Heap: " + totalMem + " MB");
+                Slog.i(TAG, "║ Free Heap: " + freeMem + " MB");
+                Slog.i(TAG, "║ Used Heap: " + (totalMem - freeMem) + " MB");
+            } catch (Exception e) {
+                Slog.w(TAG, "║ Memory info unavailable: " + e.getMessage());
+            }
+            
+            
+            try {
+                Context context = getContext();
+                if (context != null) {
+                    Slog.i(TAG, "╠══════════════════════════════════════════════════════════════╣");
+                    Slog.i(TAG, "║ Package: " + context.getPackageName());
+                    android.content.pm.PackageInfo pInfo = context.getPackageManager()
+                            .getPackageInfo(context.getPackageName(), 0);
+                    Slog.i(TAG, "║ App Version: " + pInfo.versionName);
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                        Slog.i(TAG, "║ Version Code: " + pInfo.getLongVersionCode());
+                    } else {
+                        Slog.i(TAG, "║ Version Code: " + pInfo.versionCode);
+                    }
+                }
+            } catch (Exception e) {
+                Slog.w(TAG, "║ App info unavailable: " + e.getMessage());
+            }
+            
+            
+            Slog.i(TAG, "╠══════════════════════════════════════════════════════════════╣");
+            Slog.i(TAG, "║ Timestamp: " + new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss Z", 
+                    java.util.Locale.getDefault()).format(new java.util.Date()));
+            Slog.i(TAG, "╚══════════════════════════════════════════════════════════════╝");
+            
+        } catch (Exception e) {
+            Slog.e(TAG, "Failed to log device info: " + e.getMessage());
+        }
+    }
+
     @SuppressWarnings("deprecation")
     private static String getProcessName(Context context) {
         int pid = Process.myPid();
         String processName = null;
         
-        // Try modern approach first (API 28+)
+        
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             try {
                 ActivityManager am = (ActivityManager) context.getSystemService(Context.ACTIVITY_SERVICE);
@@ -1366,7 +1452,7 @@ public class BlackBoxCore extends ClientConfiguration {
             }
         }
         
-        // Fallback to deprecated method if modern approach fails
+        
         if (processName == null) {
             try {
                 ActivityManager am = (ActivityManager) context.getSystemService(Context.ACTIVITY_SERVICE);
@@ -1556,9 +1642,7 @@ public class BlackBoxCore extends ClientConfiguration {
         }
     }
     
-    /**
-     * Install system hooks to prevent crashes
-     */
+    
     public static void installSystemHooks() {
         try {
             SimpleCrashFix.installSimpleFix();
@@ -1568,41 +1652,49 @@ public class BlackBoxCore extends ClientConfiguration {
         }
     }
     
-    /**
-     * Set essential properties for the context
-     */
-    private void setEssentialProperties(Context context, ClientConfiguration clientConfiguration) {
+    
+    private void setEssentialProperties(Context context, ClientConfiguration clientConfiguration, boolean isHostMainProcess) {
         if (clientConfiguration == null) {
             throw new IllegalArgumentException("ClientConfiguration is null!");
         }
 
-        if(!NativeCore.disableHiddenApi()){
+        // Avoid loading the native "blackbox" library in the host main/UI process.
+        // On some devices this can destabilize rendering (Surface/GraphicBuffer/EGL).
+        if (isHostMainProcess) {
             try {
                 Reflection.unseal(context);
             } catch (Throwable t) {
                 Slog.w(TAG, "Reflection.unseal failed: " + t.getMessage());
             }
-        }
+        } else {
+            if (!NativeCore.disableHiddenApi()) {
+                try {
+                    Reflection.unseal(context);
+                } catch (Throwable t) {
+                    Slog.w(TAG, "Reflection.unseal failed: " + t.getMessage());
+                }
+            }
 
-        try {
-            NativeCore.disableResourceLoading();
-        } catch (Exception e) {
-            Slog.w(TAG, "Failed to call native resource disabling: " + e.getMessage());
+            try {
+                NativeCore.disableResourceLoading();
+            } catch (Exception e) {
+                Slog.w(TAG, "Failed to call native resource disabling: " + e.getMessage());
+            }
         }
         
-        // Set only essential system properties that don't require system permissions
+        
         try {
-            // Set properties to handle window management issues (these are usually allowed)
+            
             System.setProperty("android.view.WindowManager.IGNORE_WINDOW_LEAKS", "true");
             System.setProperty("android.app.Activity.IGNORE_WINDOW_LEAKS", "true");
             System.setProperty("android.view.WindowManager.SUPPRESS_WINDOW_LEAK_WARNINGS", "true");
             
-            // Try to disable overlay loading via reflection (safer than system properties)
+            
             try {
                 Class<?> resourcesManagerClass = Class.forName("android.app.ResourcesManager");
                 Field disableOverlayField = resourcesManagerClass.getDeclaredField("mDisableOverlayLoading");
                 disableOverlayField.setAccessible(true);
-                // This might not work, but worth trying
+                
             } catch (Exception e) {
                 Slog.w(TAG, "Could not access ResourcesManager overlay field: " + e.getMessage());
             }
@@ -1611,17 +1703,37 @@ public class BlackBoxCore extends ClientConfiguration {
         }
     }
     
-    /**
-     * Initialize VPN service for internet access
-     */
+    
     private void initVpnService() {
         try {
-            // Start the VPN service asynchronously to prevent blocking main thread
+            
+            if (mClientConfiguration == null || !mClientConfiguration.isUseVpnNetwork()) {
+                Slog.d(TAG, "VPN network mode disabled, using normal network");
+                return;
+            }
+
+            // Safety: the current ProxyVpnService implementation does not implement packet
+            // forwarding (TUN read/write + TCP/UDP handling). On modern Android (including API 36),
+            // establishing a VPN with a default route will black-hole the app’s traffic.
+            // Until a real tunnel implementation exists, skip starting the VPN to preserve
+            // normal internet connectivity.
+            if (Build.VERSION.SDK_INT >= 34) {
+                Slog.w(TAG, "VPN network mode requested but disabled on this Android version (stub VPN would break connectivity). Falling back to normal network.");
+                try {
+                    // Best-effort: stop any previously started instance after upgrade.
+                    Intent stopIntent = new Intent(getContext(), top.niunaijun.blackbox.proxy.ProxyVpnService.class);
+                    getContext().stopService(stopIntent);
+                } catch (Throwable ignored) {
+                }
+                return;
+            }
+            
+            
             new Thread(new Runnable() {
                 @Override
                 public void run() {
                     try {
-                        // Start the VPN service to ensure internet access works
+                        
                         Intent vpnIntent = new Intent(getContext(), top.niunaijun.blackbox.proxy.ProxyVpnService.class);
                         vpnIntent.setAction("android.net.VpnService");
                         
@@ -1634,27 +1746,33 @@ public class BlackBoxCore extends ClientConfiguration {
                         Slog.d(TAG, "VPN service started successfully for internet access");
                     } catch (Exception e) {
                         Slog.w(TAG, "Failed to start VPN service: " + e.getMessage());
-                        // Don't fail initialization if VPN service fails
-                        // The app can still work without VPN, just with limited network access
+                        
+                        
                     }
                 }
             }, "VPNServiceInit").start();
             
         } catch (Exception e) {
             Slog.w(TAG, "Failed to initialize VPN service: " + e.getMessage());
-            // Don't fail initialization if VPN service fails
+            
         }
     }
     
-    /**
-     * Ensure proper initialization order for all components
-     */
+    
     private static void ensureProperInitialization() {
         try {
-            // Initialize core components in the correct order
+            // Keep the host main/UI process as “clean” as possible: no native init or
+            // ActivityThread hooking. These are intended for virtualized app/server processes
+            // and may destabilize rendering on some OEM builds.
+            if (BlackBoxCore.get().isMainProcess()) {
+                Slog.d(TAG, "Main process detected; skipping NativeCore/BActivityThread initialization");
+                return;
+            }
+
+            
             Slog.d(TAG, "Ensuring proper initialization order...");
             
-            // 1. Initialize NativeCore first
+            
             try {
                 NativeCore.init(android.os.Build.VERSION.SDK_INT);
                 Slog.d(TAG, "NativeCore initialized successfully");
@@ -1662,7 +1780,7 @@ public class BlackBoxCore extends ClientConfiguration {
                 Slog.w(TAG, "NativeCore initialization failed: " + e.getMessage());
             }
             
-            // 2. Initialize services
+            
             try {
                 ServiceManager.initBlackManager();
                 Slog.d(TAG, "ServiceManager initialized successfully");
@@ -1670,7 +1788,7 @@ public class BlackBoxCore extends ClientConfiguration {
                 Slog.w(TAG, "ServiceManager initialization failed: " + e.getMessage());
             }
             
-            // 3. Initialize ActivityThread hooks
+            
             try {
                 BActivityThread.hookActivityThread();
                 Slog.d(TAG, "BActivityThread hooks initialized successfully");
@@ -1684,18 +1802,16 @@ public class BlackBoxCore extends ClientConfiguration {
         }
     }
 
-    /**
-     * Returns true if the application instance is already running for the given user, else false.
-     */
+    
     public static boolean isRunningApplication(String packageName, int userId) {
-        // Access the virtual task stack
+        
         try {
-            // Get the ActivityManager from the context
+            
             android.app.ActivityManager am = (android.app.ActivityManager) getContext().getSystemService(Context.ACTIVITY_SERVICE);
             if (am == null) return false;
-            // Check all running tasks in the virtual stack
-            // We need to check the virtual stack, not the real system stack
-            // So we use the ActivityStack from BlackBox
+            
+            
+            
             ServiceManager.get();
             top.niunaijun.blackbox.core.system.am.ActivityStack stack =
                 (top.niunaijun.blackbox.core.system.am.ActivityStack) ServiceManager.getService(ServiceManager.ACTIVITY_MANAGER);
@@ -1705,7 +1821,7 @@ public class BlackBoxCore extends ClientConfiguration {
             if (tasks == null) return false;
             for (top.niunaijun.blackbox.core.system.am.TaskRecord task : tasks.values()) {
                 if (task.userId == userId && task.taskAffinity != null && task.taskAffinity.contains(packageName)) {
-                    // Check if there is at least one non-finished activity in the task
+                    
                     for (top.niunaijun.blackbox.core.system.am.ActivityRecord activity : task.activities) {
                         if (!activity.finished) {
                             return true;
@@ -1719,13 +1835,11 @@ public class BlackBoxCore extends ClientConfiguration {
         return false;
     }
 
-    /**
-     * Register a callback to be notified when services become available
-     */
+    
     public void addServiceAvailableCallback(Runnable callback) {
         synchronized (mServiceCallbackLock) {
             if (mServicesInitialized) {
-                // Services are already available, run callback immediately
+                
                 callback.run();
             } else {
                 mServiceAvailableCallbacks.add(callback);
@@ -1733,18 +1847,14 @@ public class BlackBoxCore extends ClientConfiguration {
         }
     }
     
-    /**
-     * Remove a service available callback
-     */
+    
     public void removeServiceAvailableCallback(Runnable callback) {
         synchronized (mServiceCallbackLock) {
             mServiceAvailableCallbacks.remove(callback);
         }
     }
     
-    /**
-     * Notify all registered callbacks that services are available
-     */
+    
     private void notifyServiceAvailableCallbacks() {
         synchronized (mServiceCallbackLock) {
             if (!mServiceAvailableCallbacks.isEmpty()) {
@@ -1761,11 +1871,7 @@ public class BlackBoxCore extends ClientConfiguration {
         }
     }
 
-    /**
-     * Wait for services to become available with a timeout
-     * @param timeoutMs Timeout in milliseconds
-     * @return true if services became available, false if timeout
-     */
+    
     public boolean waitForServicesAvailable(long timeoutMs) {
         if (mServicesInitialized) {
             return true;
@@ -1784,18 +1890,12 @@ public class BlackBoxCore extends ClientConfiguration {
         return mServicesInitialized;
     }
     
-    /**
-     * Check if services are currently available
-     */
+    
     public boolean isServicesAvailable() {
         return mServicesInitialized;
     }
 
-    /**
-     * Check if an APK file is the BlackBox app itself
-     * @param apkFile The APK file to check
-     * @return true if it's the BlackBox app, false otherwise
-     */
+    
     public boolean isBlackBoxApp(File apkFile) {
         try {
             if (apkFile == null || !apkFile.exists()) {
@@ -1813,11 +1913,7 @@ public class BlackBoxCore extends ClientConfiguration {
         return false;
     }
     
-    /**
-     * Check if a package name is the BlackBox app
-     * @param packageName The package name to check
-     * @return true if it's the BlackBox app, false otherwise
-     */
+    
     public boolean isBlackBoxApp(String packageName) {
         if (packageName == null || packageName.isEmpty()) {
             return false;
@@ -1825,29 +1921,25 @@ public class BlackBoxCore extends ClientConfiguration {
         return packageName.equals(getHostPkg());
     }
     
-    /**
-     * Handle server service startup failures with appropriate recovery actions
-     */
+    
     private void handleServerServiceStartFailure(int retry, int maxRetries, Exception e) {
         if (retry < maxRetries - 1) {
             Slog.w(TAG, "Server service start failed, will retry. Attempt " + (retry + 1) + " of " + maxRetries);
         } else {
             Slog.e(TAG, "Server service start failed after " + maxRetries + " attempts: " + e.getMessage());
-            // Try alternative startup methods for server process
+            
             tryAlternativeServerStartupMethods();
         }
     }
     
-    /**
-     * Handle "process is bad" errors for server process with recovery strategies
-     */
+    
     private void handleServerProcessBadError(int retry, int maxRetries) {
         if (retry < maxRetries - 1) {
             Slog.w(TAG, "Server process is bad, attempting recovery. Attempt " + (retry + 1) + " of " + maxRetries);
             
-            // Try to recover the server process state
+            
             try {
-                // Schedule recovery instead of blocking
+                
                 scheduleServerProcessRecovery(retry, maxRetries);
                 
             } catch (Exception e) {
@@ -1855,17 +1947,15 @@ public class BlackBoxCore extends ClientConfiguration {
             }
         } else {
             Slog.e(TAG, "Server process recovery failed after " + maxRetries + " attempts");
-            // Try alternative startup methods for server process
+            
             tryAlternativeServerStartupMethods();
         }
     }
     
-    /**
-     * Schedule server process recovery asynchronously
-     */
+    
     private void scheduleServerProcessRecovery(int retry, int maxRetries) {
         try {
-            int delayMs = 2000; // 2 second delay for process recovery
+            int delayMs = 2000; 
             Slog.d(TAG, "Scheduling server process recovery in " + delayMs + "ms");
             
             android.os.Handler handler = new android.os.Handler(android.os.Looper.getMainLooper());
@@ -1874,10 +1964,10 @@ public class BlackBoxCore extends ClientConfiguration {
                 public void run() {
                     try {
                         Slog.d(TAG, "Executing server process recovery");
-                        // Try to refresh the server process context
+                        
                         refreshServerProcessContext();
                         
-                        // Retry the service start
+                        
                         if (isServerProcess() && mClientConfiguration.isEnableDaemonService()) {
                             Intent intent = new Intent();
                             intent.setClass(getContext(), DaemonService.class);
@@ -1901,14 +1991,12 @@ public class BlackBoxCore extends ClientConfiguration {
         }
     }
     
-    /**
-     * Try alternative methods to start the service in server process
-     */
+    
     private void tryAlternativeServerStartupMethods() {
         Slog.w(TAG, "Trying alternative startup methods for server process...");
         
         try {
-            // Method 1: Try using a different context
+            
             Context alternativeContext = getAlternativeContext();
             if (alternativeContext != null) {
                 Intent intent = new Intent();
@@ -1922,7 +2010,7 @@ public class BlackBoxCore extends ClientConfiguration {
         }
         
         try {
-            // Method 2: Try using application context
+            
             Context appContext = getContext().getApplicationContext();
             if (appContext != null && appContext != getContext()) {
                 Intent intent = new Intent();
@@ -1938,35 +2026,31 @@ public class BlackBoxCore extends ClientConfiguration {
         Slog.e(TAG, "All alternative startup methods failed for server process");
     }
     
-    /**
-     * Refresh the server process context to recover from bad state
-     */
+    
     private void refreshServerProcessContext() {
         try {
-            // This is a placeholder for server process context refresh logic
-            // In a real implementation, you might want to reinitialize certain server components
+            
+            
             Slog.d(TAG, "Attempting to refresh server process context");
             
-            // No blocking operations - just log and continue
+            
             
         } catch (Exception e) {
             Slog.w(TAG, "Server process context refresh failed: " + e.getMessage());
         }
     }
     
-    /**
-     * Schedule a delayed service start for server process
-     */
+    
     private void scheduleDelayedServerServiceStart() {
         try {
-            // Schedule a delayed retry using a handler
+            
             android.os.Handler handler = new android.os.Handler(android.os.Looper.getMainLooper());
             handler.postDelayed(new Runnable() {
                 @Override
                 public void run() {
                     Slog.d(TAG, "Executing delayed server service start");
                     if (isServerProcess() && mClientConfiguration.isEnableDaemonService()) {
-                        // Re-trigger the server process service start
+                        
                         try {
                             Intent intent = new Intent();
                             intent.setClass(getContext(), DaemonService.class);
@@ -1983,7 +2067,7 @@ public class BlackBoxCore extends ClientConfiguration {
                         }
                     }
                 }
-            }, 5000); // 5 second delay
+            }, 5000); 
             
             Slog.d(TAG, "Scheduled delayed server service start in 5 seconds");
         } catch (Exception e) {
@@ -1991,9 +2075,7 @@ public class BlackBoxCore extends ClientConfiguration {
         }
     }
     
-    /**
-     * Schedule a delayed retry for server process service startup
-     */
+    
     private void scheduleDelayedServerRetry(Intent intent, int retry) {
         try {
             int delayMs = 1000 * retry;
@@ -2013,7 +2095,7 @@ public class BlackBoxCore extends ClientConfiguration {
                         Slog.d(TAG, "Delayed server retry successful");
                     } catch (Exception e) {
                         Slog.e(TAG, "Delayed server retry failed: " + e.getMessage());
-                        // Try alternative methods
+                        
                         tryAlternativeServerStartupMethods();
                     }
                 }
@@ -2021,8 +2103,213 @@ public class BlackBoxCore extends ClientConfiguration {
             
         } catch (Exception e) {
             Slog.w(TAG, "Failed to schedule delayed server retry: " + e.getMessage());
-            // Fall back to alternative methods immediately
+            
             tryAlternativeServerStartupMethods();
         }
+    }
+    public interface LogSendListener {
+        void onSuccess();
+        void onFailure(String error);
+    }
+
+    public void sendLogs(String caption, boolean async) {
+        sendLogs(caption, async, null);
+    }
+
+    public void sendLogs(String caption, boolean async, LogSendListener listener) {
+        String chatId = mClientConfiguration != null ? mClientConfiguration.getLogSenderChatId() : null;
+        if (chatId == null || chatId.isEmpty()) return;
+
+        Runnable sendTask = () -> {
+            try {
+                
+                File cacheDir = getContext().getCacheDir();
+                File tempLog = File.createTempFile("crash_log_", ".txt", cacheDir);
+
+
+                String deviceInfo = getDeviceInfoString();
+
+
+                try (java.io.FileOutputStream fos = new java.io.FileOutputStream(tempLog)) {
+                    
+                    String header = "Caption: " + caption + "\n\n" + deviceInfo + "\n\n--- LOGCAT ---\n";
+                    fos.write(header.getBytes("UTF-8"));
+                    
+                    
+                    java.lang.Process process = Runtime.getRuntime().exec("logcat -d -v threadtime");
+                    try (java.io.InputStream in = process.getInputStream()) {
+                        byte[] buffer = new byte[8192];
+                        int len;
+                        while ((len = in.read(buffer)) != -1) {
+                            fos.write(buffer, 0, len);
+                        }
+                    }
+                    fos.flush();
+                }
+                
+                
+                String error = LogSender.send(chatId, tempLog, deviceInfo);
+                if (error != null) {
+                    Slog.e(TAG, "Log upload failed: " + error);
+                    
+                    new Handler(Looper.getMainLooper()).post(() -> {
+                         try {
+                             android.widget.Toast.makeText(getContext(), "Log Upload Failed: " + error, android.widget.Toast.LENGTH_LONG).show();
+                         } catch (Exception e) {}
+                        if (listener != null) {
+                            listener.onFailure(error);
+                        }
+                    });
+                    
+                    
+                    if (getContext() != null) {
+                        NotificationManager nm = (NotificationManager) getContext().getSystemService(Context.NOTIFICATION_SERVICE);
+                        if (nm != null) {
+                            String channelId = getContext().getPackageName() + ".blackbox_core";
+                            Notification.Builder builder;
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                                builder = new Notification.Builder(getContext(), channelId);
+                            } else {
+                                builder = new Notification.Builder(getContext());
+                            }
+                            
+                            builder.setSmallIcon(android.R.drawable.stat_notify_error)
+                                   .setContentTitle("BlackBox Log Upload Failed")
+                                   .setContentText(error)
+                                   .setAutoCancel(true);
+                                   
+                            nm.notify(9999, builder.build());
+                        }
+                    }
+                } else {
+                    
+                     new Handler(Looper.getMainLooper()).post(() -> {
+                         try {
+                             android.widget.Toast.makeText(getContext(), "Log Upload Success", android.widget.Toast.LENGTH_SHORT).show();
+                         } catch (Exception e) {}
+                         if (listener != null) {
+                             listener.onSuccess();
+                         }
+                     });
+
+                    
+                    if (getContext() != null) {
+                        NotificationManager nm = (NotificationManager) getContext().getSystemService(Context.NOTIFICATION_SERVICE);
+                        if (nm != null) {
+                            String channelId = getContext().getPackageName() + ".blackbox_core";
+                            Notification.Builder builder;
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                                builder = new Notification.Builder(getContext(), channelId);
+                            } else {
+                                builder = new Notification.Builder(getContext());
+                            }
+
+                            builder.setSmallIcon(android.R.drawable.stat_sys_upload_done)
+                                   .setContentTitle("BlackBox Log Upload")
+                                   .setContentText("Logs sent successfully")
+                                   .setAutoCancel(true);
+
+                            nm.notify(9999, builder.build());
+                        }
+                    }
+                }
+                
+                
+                tempLog.delete();
+            } catch (Exception e) {
+                Slog.e(TAG, "Failed to send logs: " + e.getMessage());
+                new Handler(Looper.getMainLooper()).post(() -> {
+                    if (listener != null) {
+                        listener.onFailure(e.getMessage());
+                    }
+                });
+            }
+        };
+
+        if (async) {
+            new Thread(sendTask).start();
+        } else {
+            sendTask.run();
+        }
+    }
+
+    private String getDeviceInfoString() {
+        StringBuilder sb = new StringBuilder();
+        try {
+            sb.append("DEVICE INFORMATION\n");
+            sb.append("------------------\n");
+            
+            
+            sb.append("Android Version: ").append(Build.VERSION.RELEASE).append("\n");
+            sb.append("SDK Level: ").append(Build.VERSION.SDK_INT).append("\n");
+            sb.append("Build ID: ").append(Build.ID).append("\n");
+            sb.append("Build Display: ").append(Build.DISPLAY).append("\n");
+            
+            
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                sb.append("Security Patch: ").append(Build.VERSION.SECURITY_PATCH).append("\n");
+            }
+            
+            
+            sb.append("Manufacturer: ").append(Build.MANUFACTURER).append("\n");
+            sb.append("Brand: ").append(Build.BRAND).append("\n");
+            sb.append("Model: ").append(Build.MODEL).append("\n");
+            sb.append("Device: ").append(Build.DEVICE).append("\n");
+            sb.append("Product: ").append(Build.PRODUCT).append("\n");
+            sb.append("Board: ").append(Build.BOARD).append("\n");
+            sb.append("Hardware: ").append(Build.HARDWARE).append("\n");
+            
+            
+            sb.append("Supported ABIs: ").append(String.join(", ", Build.SUPPORTED_ABIS)).append("\n");
+            if (Build.SUPPORTED_32_BIT_ABIS.length > 0) {
+                sb.append("32-bit ABIs: ").append(String.join(", ", Build.SUPPORTED_32_BIT_ABIS)).append("\n");
+            }
+            if (Build.SUPPORTED_64_BIT_ABIS.length > 0) {
+                sb.append("64-bit ABIs: ").append(String.join(", ", Build.SUPPORTED_64_BIT_ABIS)).append("\n");
+            }
+            
+
+
+
+            
+            try {
+                Runtime runtime = Runtime.getRuntime();
+                long maxMem = runtime.maxMemory() / (1024 * 1024);
+                long totalMem = runtime.totalMemory() / (1024 * 1024);
+                long freeMem = runtime.freeMemory() / (1024 * 1024);
+                sb.append("Max Heap: ").append(maxMem).append(" MB\n");
+                sb.append("Total Heap: ").append(totalMem).append(" MB\n");
+                sb.append("Free Heap: ").append(freeMem).append(" MB\n");
+                sb.append("Used Heap: ").append(totalMem - freeMem).append(" MB\n");
+            } catch (Exception e) {
+                sb.append("Memory info unavailable: ").append(e.getMessage()).append("\n");
+            }
+            
+            
+            try {
+                Context context = getContext();
+                if (context != null) {
+                    sb.append("Package: ").append(context.getPackageName()).append("\n");
+                    android.content.pm.PackageInfo pInfo = context.getPackageManager()
+                            .getPackageInfo(context.getPackageName(), 0);
+                    sb.append("App Version: ").append(pInfo.versionName).append("\n");
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                        sb.append("Version Code: ").append(pInfo.getLongVersionCode()).append("\n");
+                    } else {
+                        sb.append("Version Code: ").append(pInfo.versionCode).append("\n");
+                    }
+                }
+            } catch (Exception e) {
+                sb.append("App info unavailable: ").append(e.getMessage()).append("\n");
+            }
+            
+            
+            sb.append("Timestamp: ").append(new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss Z", 
+                    java.util.Locale.getDefault()).format(new java.util.Date())).append("\n");
+            
+        } catch (Exception e) {
+            sb.append("Failed to build device info: ").append(e.getMessage());
+        }
+        return sb.toString();
     }
 }

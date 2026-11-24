@@ -7,14 +7,7 @@ import android.os.storage.StorageVolume;
 import top.niunaijun.blackbox.core.system.ServiceManager;
 import top.niunaijun.blackbox.core.system.os.IBStorageManagerService;
 
-/**
- * updated by alex5402 on 4/14/21.
- * * ∧＿∧
- * (`･ω･∥
- * 丶　つ０
- * しーＪ
- * TFNQw5HgWUS33Ke1eNmSFTwoQySGU7XNsK (USDT TRC20)
- */
+
 public class BStorageManager extends BlackManager<IBStorageManagerService> {
     private static final BStorageManager sStorageManager = new BStorageManager();
 
@@ -29,7 +22,11 @@ public class BStorageManager extends BlackManager<IBStorageManagerService> {
 
     public StorageVolume[] getVolumeList(int uid, String packageName, int flags, int userId) {
         try {
-            return getService().getVolumeList(uid, packageName, flags, userId);
+            IBStorageManagerService service = getService();
+            if (service == null) {
+                return new StorageVolume[]{};
+            }
+            return service.getVolumeList(uid, packageName, flags, userId);
         } catch (RemoteException e) {
             e.printStackTrace();
         }

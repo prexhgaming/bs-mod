@@ -3,9 +3,12 @@ package top.niunaijun.blackbox.core.system.os;
 import android.net.Uri;
 import android.os.Process;
 import android.os.RemoteException;
+import android.os.storage.StorageManager;
 import android.os.storage.StorageVolume;
+import android.content.Context;
 
 import java.io.File;
+import java.util.List;
 
 import black.android.os.storage.BRStorageManager;
 import black.android.os.storage.BRStorageVolume;
@@ -17,14 +20,7 @@ import top.niunaijun.blackbox.fake.provider.FileProvider;
 import top.niunaijun.blackbox.proxy.ProxyManifest;
 import top.niunaijun.blackbox.utils.compat.BuildCompat;
 
-/**
- * updated by alex5402 on 4/10/21.
- * * ∧＿∧
- * (`･ω･∥
- * 丶　つ０
- * しーＪ
- * TFNQw5HgWUS33Ke1eNmSFTwoQySGU7XNsK (USDT TRC20)
- */
+
 public class BStorageManagerService extends IBStorageManagerService.Stub implements ISystemService {
     private static final BStorageManagerService sService = new BStorageManagerService();
 
@@ -37,24 +33,42 @@ public class BStorageManagerService extends IBStorageManagerService.Stub impleme
 
     @Override
     public StorageVolume[] getVolumeList(int uid, String packageName, int flags, int userId) throws RemoteException {
-        if (BRStorageManager.get().getVolumeList(0, 0) == null) {
-            return null;
-        }
+        StorageVolume[] storageVolumes = null;
         try {
-            StorageVolume[] storageVolumes = BRStorageManager.get().getVolumeList(BUserHandle.getUserId(Process.myUid()), 0);
-            if (storageVolumes == null)
-                return null;
+            if (BRStorageManager.get().getVolumeList(0, 0) != null) {
+                storageVolumes = BRStorageManager.get().getVolumeList(BUserHandle.getUserId(Process.myUid()), 0);
+            }
+        } catch (Throwable ignored) {
+        }
+
+        if (storageVolumes == null) {
+            try {
+                Context context = BlackBoxCore.getContext();
+                StorageManager storageManager = (StorageManager) context.getSystemService(Context.STORAGE_SERVICE);
+                if (storageManager != null) {
+                    List<StorageVolume> volumes = storageManager.getStorageVolumes();
+                    if (volumes != null) {
+                        storageVolumes = volumes.toArray(new StorageVolume[0]);
+                    }
+                }
+            } catch (Throwable ignored) {
+            }
+        }
+
+        if (storageVolumes == null) {
+            return new StorageVolume[]{};
+        }
+
+        try {
             for (StorageVolume storageVolume : storageVolumes) {
                 BRStorageVolume.get(storageVolume)._set_mPath(BEnvironment.getExternalUserDir(userId));
                 if (BuildCompat.isPie()) {
                     BRStorageVolume.get(storageVolume)._set_mInternalPath(BEnvironment.getExternalUserDir(userId));
                 }
             }
-            return storageVolumes;
-        } catch (Exception e) {
-            e.printStackTrace();
+        } catch (Throwable ignored) {
         }
-        return null;
+        return storageVolumes;
     }
 
     @Override

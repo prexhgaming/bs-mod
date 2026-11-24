@@ -30,14 +30,7 @@ import top.niunaijun.blackbox.utils.Slog;
 
 import static android.content.pm.PackageManager.GET_META_DATA;
 
-/**
- * updated by alex5402 on 3/31/21.
- * * ∧＿∧
- * (`･ω･∥
- * 丶　つ０
- * しーＪ
- * TFNQw5HgWUS33Ke1eNmSFTwoQySGU7XNsK (USDT TRC20)
- */
+
 public class BActivityManagerService extends IBActivityManagerService.Stub implements ISystemService {
     public static final String TAG = "BActivityManagerService";
     private static final BActivityManagerService sService = new BActivityManagerService();
@@ -85,8 +78,16 @@ public class BActivityManagerService extends IBActivityManagerService.Stub imple
     public Intent sendBroadcast(Intent intent, String resolvedType, int userId) throws RemoteException {
         List<ResolveInfo> resolves = BPackageManagerService.get().queryBroadcastReceivers(intent, GET_META_DATA, resolvedType, userId);
 
-        for (ResolveInfo resolve : resolves) {
-            ProcessRecord processRecord = BProcessManagerService.get().findProcessRecord(resolve.activityInfo.packageName, resolve.activityInfo.processName, userId);
+        if (resolves != null) {
+            for (ResolveInfo resolve : resolves) {
+                if (resolve == null || resolve.activityInfo == null) {
+                    continue;
+                }
+                ProcessRecord processRecord = BProcessManagerService.get().findProcessRecord(
+                        resolve.activityInfo.packageName,
+                        resolve.activityInfo.processName,
+                        userId
+                );
             if (processRecord == null) {
                 continue;
             }
@@ -94,6 +95,7 @@ public class BActivityManagerService extends IBActivityManagerService.Stub imple
                 processRecord.bActivityThread.bindApplication();
             } catch (RemoteException e) {
                 e.printStackTrace();
+            }
             }
         }
         Intent shadow = new Intent();
@@ -203,7 +205,14 @@ public class BActivityManagerService extends IBActivityManagerService.Stub imple
         }
         mBroadcastManager.sendBroadcast(pendingResultData);
         for (ResolveInfo resolve : resolves) {
-            ProcessRecord processRecord = BProcessManagerService.get().findProcessRecord(resolve.activityInfo.packageName, resolve.activityInfo.processName, userId);
+            if (resolve == null || resolve.activityInfo == null) {
+                continue;
+            }
+            ProcessRecord processRecord = BProcessManagerService.get().findProcessRecord(
+                    resolve.activityInfo.packageName,
+                    resolve.activityInfo.processName,
+                    userId
+            );
             if (processRecord != null) {
                 ReceiverData data = new ReceiverData();
                 data.intent = intent;

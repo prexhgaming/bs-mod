@@ -19,6 +19,9 @@ import top.niunaijun.blackbox.fake.service.IAppOpsManagerProxy;
 import top.niunaijun.blackbox.fake.service.IAppWidgetManagerProxy;
 import top.niunaijun.blackbox.fake.service.IAttributionSourceProxy;
 import top.niunaijun.blackbox.fake.service.IAutofillManagerProxy;
+import top.niunaijun.blackbox.fake.service.IInputMethodManagerProxy;
+import top.niunaijun.blackbox.fake.service.ICredentialManagerProxy;
+import top.niunaijun.blackbox.fake.service.ISensitiveContentProtectionManagerProxy;
 import top.niunaijun.blackbox.fake.service.ISettingsSystemProxy;
 import top.niunaijun.blackbox.fake.service.IConnectivityManagerProxy;
 import top.niunaijun.blackbox.fake.service.ISystemSensorManagerProxy;
@@ -35,6 +38,7 @@ import top.niunaijun.blackbox.fake.service.IFingerprintManagerProxy;
 import top.niunaijun.blackbox.fake.service.IGraphicsStatsProxy;
 import top.niunaijun.blackbox.fake.service.IJobServiceProxy;
 import top.niunaijun.blackbox.fake.service.ILauncherAppsProxy;
+import top.niunaijun.blackbox.fake.service.ILocaleManagerProxy;
 import top.niunaijun.blackbox.fake.service.ILocationManagerProxy;
 import top.niunaijun.blackbox.fake.service.IMediaRouterServiceProxy;
 import top.niunaijun.blackbox.fake.service.IMediaSessionManagerProxy;
@@ -67,15 +71,19 @@ import top.niunaijun.blackbox.fake.service.IPackageManagerProxy;
 import top.niunaijun.blackbox.fake.service.IPermissionManagerProxy;
 import top.niunaijun.blackbox.fake.service.IPersistentDataBlockServiceProxy;
 import top.niunaijun.blackbox.fake.service.IPhoneSubInfoProxy;
+import top.niunaijun.blackbox.fake.service.IPhoneSubInfoServiceProxy;
 import top.niunaijun.blackbox.fake.service.IPowerManagerProxy;
 import top.niunaijun.blackbox.fake.service.ApkAssetsProxy;
 import top.niunaijun.blackbox.fake.service.ResourcesManagerProxy;
+import top.niunaijun.blackbox.fake.service.IRoleManagerProxy;
 import top.niunaijun.blackbox.fake.service.IShortcutManagerProxy;
 import top.niunaijun.blackbox.fake.service.IStorageManagerProxy;
 import top.niunaijun.blackbox.fake.service.IStorageStatsManagerProxy;
 import top.niunaijun.blackbox.fake.service.ISystemUpdateProxy;
+import top.niunaijun.blackbox.fake.service.ISubServiceProxy;
 import top.niunaijun.blackbox.fake.service.ITelephonyManagerProxy;
 import top.niunaijun.blackbox.fake.service.ITelephonyRegistryProxy;
+import top.niunaijun.blackbox.fake.service.IUiModeManagerProxy;
 import top.niunaijun.blackbox.fake.service.IUserManagerProxy;
 import top.niunaijun.blackbox.fake.service.IVibratorServiceProxy;
 import top.niunaijun.blackbox.fake.service.IVpnManagerProxy;
@@ -91,14 +99,8 @@ import top.niunaijun.blackbox.fake.service.ISettingsProviderProxy;
 import top.niunaijun.blackbox.fake.service.FeatureFlagUtilsProxy;
 import top.niunaijun.blackbox.fake.service.WorkManagerProxy;
 
-/**
- * updated by alex5402 on 3/30/21.
- * * ∧＿∧
- * (`･ω･∥
- * 丶　つ０
- * しーＪ
- * TFNQw5HgWUS33Ke1eNmSFTwoQySGU7XNsK (USDT TRC20)
- */
+
+
 public class HookManager {
     public static final String TAG = "HookManager";
 
@@ -122,6 +124,7 @@ public class HookManager {
             addInjector(new INotificationManagerProxy());
             addInjector(new IAlarmManagerProxy());
             addInjector(new IAppWidgetManagerProxy());
+            addInjector(new IInputMethodManagerProxy());
             addInjector(new ContentServiceStub());
             addInjector(new IWindowManagerProxy());
             addInjector(new IUserManagerProxy());
@@ -155,6 +158,7 @@ public class HookManager {
             addInjector(new ILocationManagerProxy());
             addInjector(new IStorageManagerProxy());
             addInjector(new ILauncherAppsProxy());
+            addInjector(new ILocaleManagerProxy());
             addInjector(new IJobServiceProxy());
             addInjector(new IAccessibilityManagerProxy());
             addInjector(new ITelephonyRegistryProxy());
@@ -166,64 +170,73 @@ public class HookManager {
         addInjector(new IContentProviderProxy());
         addInjector(new ISettingsSystemProxy());
         addInjector(new ISystemSensorManagerProxy());
+
+            if (android.os.Build.VERSION.SDK_INT >= 34) {
+                addInjector(new ICredentialManagerProxy());
+            }
         
-        // Xiaomi-specific proxies to prevent crashes on MIUI devices
+        
         addInjector(new IXiaomiAttributionSourceProxy());
         addInjector(new IXiaomiSettingsProxy());
         addInjector(new IXiaomiMiuiServicesProxy());
+            addInjector(new IPhoneSubInfoServiceProxy());
+            addInjector(new ISubServiceProxy());
             addInjector(new IPhoneSubInfoProxy());
             addInjector(new IMediaRouterServiceProxy());
             addInjector(new IPowerManagerProxy());
             addInjector(new IContextHubServiceProxy());
+            
             addInjector(new IVibratorServiceProxy());
             addInjector(new IPersistentDataBlockServiceProxy());
             addInjector(AppInstrumentation.get());
-            /*
-            * It takes time to test and enhance the compatibility of WifiManager
-            * (only tested in Android 10).
-            * commented by BlackBoxing at 2022/03/08
-            * */
+            
             addInjector(new IWifiManagerProxy());
             addInjector(new IWifiScannerProxy());
             addInjector(new ApkAssetsProxy());
             addInjector(new ResourcesManagerProxy());
-            // 12.0
+            
             if (BuildCompat.isS()) {
                 addInjector(new IActivityClientProxy(null));
                 addInjector(new IVpnManagerProxy());
             }
-            // 11.0
+            
+            if (BuildCompat.isS()) {
+                addInjector(new ISensitiveContentProtectionManagerProxy());
+            }
+            
             if (BuildCompat.isR()) {
                 addInjector(new IPermissionManagerProxy());
             }
-            // 10.0
+            
             if (BuildCompat.isQ()) {
                 addInjector(new IActivityTaskManagerProxy());
+                addInjector(new IRoleManagerProxy());
             }
-            // 9.0
+            
             if (BuildCompat.isPie()) {
                 addInjector(new ISystemUpdateProxy());
             }
-            // 8.0
+            
             if (BuildCompat.isOreo()) {
                 addInjector(new IAutofillManagerProxy());
                 addInjector(new IDeviceIdentifiersPolicyProxy());
                 addInjector(new IStorageStatsManagerProxy());
             }
-            // 7.1
+            
             if (BuildCompat.isN_MR1()) {
+            addInjector(new IUiModeManagerProxy());
                 addInjector(new IShortcutManagerProxy());
             }
-            // 7.0
+            
             if (BuildCompat.isN()) {
                 addInjector(new INetworkManagementServiceProxy());
             }
-            // 6.0
+            
             if (BuildCompat.isM()) {
                 addInjector(new IFingerprintManagerProxy());
                 addInjector(new IGraphicsStatsProxy());
             }
-            // 5.0
+            
             if (BuildCompat.isL()) {
                 addInjector(new IJobServiceProxy());
             }
@@ -260,22 +273,20 @@ public class HookManager {
                 value.injectHook();
             } catch (Exception e) {
                 Slog.d(TAG, "hook error: " + value);
-                // Enhanced error handling for critical hooks
+                
                 handleHookError(value, e);
             }
         }
     }
 
-    /**
-     * Enhanced error handling for hook failures
-     */
+    
     private void handleHookError(IInjectHook hook, Exception e) {
         String hookName = hook.getClass().getSimpleName();
         
-        // Log the error with more details
+        
         Slog.e(TAG, "Hook failed: " + hookName + " - " + e.getMessage(), e);
         
-        // Special handling for critical hooks that could cause crashes
+        
         if (hookName.contains("ActivityManager") || 
             hookName.contains("PackageManager") ||
             hookName.contains("WebView") ||
@@ -284,7 +295,7 @@ public class HookManager {
             Slog.w(TAG, "Critical hook failed: " + hookName + ", attempting recovery");
             
             try {
-                // Try to recover by re-initializing the hook
+                
                 if (hook.isBadEnv()) {
                     Slog.d(TAG, "Attempting to recover hook: " + hookName);
                     hook.injectHook();
@@ -295,9 +306,7 @@ public class HookManager {
         }
     }
 
-    /**
-     * Check if all critical hooks are properly installed
-     */
+    
     public boolean areCriticalHooksInstalled() {
         String[] criticalHooks = {
             "IActivityManagerProxy",
@@ -324,16 +333,14 @@ public class HookManager {
         return true;
     }
 
-    /**
-     * Force re-initialization of all hooks
-     */
+    
     public void reinitializeHooks() {
         Slog.d(TAG, "Reinitializing all hooks");
         
-        // Clear existing injectors
+        
         mInjectors.clear();
         
-        // Re-initialize
+        
         init();
         
         Slog.d(TAG, "Hook reinitialization completed");

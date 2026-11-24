@@ -5,14 +5,7 @@ import java.lang.reflect.Method;
 
 import top.niunaijun.jnihook.jni.JniHook;
 
-/**
- * updated by alex5402 on 2021/5/7.
- * * ∧＿∧
- * (`･ω･∥
- * 丶　つ０
- * しーＪ
- * TFNQw5HgWUS33Ke1eNmSFTwoQySGU7XNsK (USDT TRC20)
- */
+
 public class ReflectCore {
 
     public static void set(Class<?> clazz) {

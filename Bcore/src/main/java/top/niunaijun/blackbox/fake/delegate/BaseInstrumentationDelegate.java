@@ -12,6 +12,8 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.pm.ActivityInfo;
+import android.content.pm.PackageManager;
+import android.content.pm.ResolveInfo;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.IBinder;
@@ -60,17 +62,17 @@ public class BaseInstrumentationDelegate extends Instrumentation {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             mBaseInstrumentation.addResults(results);
         } else {
-            // For Android versions below API 26 (Oreo), implement alternative result handling
+            
             try {
-                // Store results in a way that's compatible with older Android versions
+                
                 if (results != null && !results.isEmpty()) {
-                    // Use sendStatus to send results (available on all Android versions)
+                    
                     mBaseInstrumentation.sendStatus(0, results);
                     
-                    // Alternative: Store results in a static map for later retrieval
+                    
                     storeResultsForOlderVersions(results);
                     
-                    // Alternative: Use SharedPreferences to store results
+                    
                     storeResultsInPreferences(results);
                 }
             } catch (Exception e) {
@@ -79,16 +81,14 @@ public class BaseInstrumentationDelegate extends Instrumentation {
         }
     }
     
-    /**
-     * Store results in a static map for older Android versions
-     */
+    
     private void storeResultsForOlderVersions(Bundle results) {
         try {
-            // Use reflection to access a static results storage
+            
             Class<?> resultsStorageClass = Class.forName("top.niunaijun.blackbox.utils.ResultsStorage");
             java.lang.reflect.Method storeMethod = resultsStorageClass.getMethod("storeResults", String.class, Bundle.class);
             
-            // Generate a unique key for these results
+            
             String resultKey = "results_" + System.currentTimeMillis() + "_" + android.os.Process.myPid();
             storeMethod.invoke(null, resultKey, results);
             
@@ -98,9 +98,7 @@ public class BaseInstrumentationDelegate extends Instrumentation {
         }
     }
     
-    /**
-     * Store results in SharedPreferences for older Android versions
-     */
+    
     private void storeResultsInPreferences(Bundle results) {
         try {
             Context context = getContext();
@@ -108,7 +106,7 @@ public class BaseInstrumentationDelegate extends Instrumentation {
                 android.content.SharedPreferences prefs = context.getSharedPreferences("instrumentation_results", Context.MODE_PRIVATE);
                 android.content.SharedPreferences.Editor editor = prefs.edit();
                 
-                // Convert Bundle to key-value pairs and store in preferences
+                
                 for (String key : results.keySet()) {
                     Object value = results.get(key);
                     if (value instanceof String) {
@@ -124,7 +122,7 @@ public class BaseInstrumentationDelegate extends Instrumentation {
                     }
                 }
                 
-                // Add timestamp for result identification
+                
                 editor.putLong("timestamp", System.currentTimeMillis());
                 editor.putInt("pid", android.os.Process.myPid());
                 
@@ -440,7 +438,79 @@ public class BaseInstrumentationDelegate extends Instrumentation {
         return mBaseInstrumentation.getUiAutomation();
     }
 
+    private void resolveVirtualActivityIntent(Context context, Intent intent) {
+        if (intent == null || intent.getComponent() != null) {
+            return;
+        }
+
+        final int userId = BActivityThread.getUserId();
+        final String appPackageName = BActivityThread.getAppPackageName();
+        if (appPackageName == null || !BlackBoxCore.get().isInstalled(appPackageName, userId)) {
+            return;
+        }
+
+        final String resolvedType;
+        try {
+            resolvedType = context != null
+                    ? intent.resolveTypeIfNeeded(context.getContentResolver())
+                    : null;
+        } catch (Throwable ignored) {
+            return;
+        }
+
+        String originalPackage = intent.getPackage();
+        ResolveInfo resolveInfo = BlackBoxCore.getBPackageManager().resolveActivity(
+                intent,
+                PackageManager.GET_META_DATA,
+                resolvedType,
+                userId);
+
+        if (resolveInfo == null) {
+            java.util.List<ResolveInfo> candidates = BlackBoxCore.getBPackageManager().queryIntentActivities(
+                    intent,
+                    PackageManager.GET_META_DATA,
+                    resolvedType,
+                    userId);
+            if (candidates != null && !candidates.isEmpty()) {
+                resolveInfo = candidates.get(0);
+            }
+        }
+
+        if (resolveInfo == null && originalPackage == null) {
+            intent.setPackage(appPackageName);
+            resolveInfo = BlackBoxCore.getBPackageManager().resolveActivity(
+                    intent,
+                    PackageManager.GET_META_DATA,
+                    resolvedType,
+                    userId);
+            if (resolveInfo == null) {
+                java.util.List<ResolveInfo> candidates = BlackBoxCore.getBPackageManager().queryIntentActivities(
+                        intent,
+                        PackageManager.GET_META_DATA,
+                        resolvedType,
+                        userId);
+                if (candidates != null && !candidates.isEmpty()) {
+                    resolveInfo = candidates.get(0);
+                }
+            }
+            if (resolveInfo == null) {
+                intent.setPackage(null);
+            }
+        }
+
+        if (resolveInfo == null || resolveInfo.activityInfo == null) {
+            if (originalPackage != null && !originalPackage.equals(intent.getPackage())) {
+                intent.setPackage(originalPackage);
+            }
+            return;
+        }
+
+        ActivityInfo activityInfo = resolveInfo.activityInfo;
+        intent.setComponent(new ComponentName(activityInfo.packageName, activityInfo.name));
+    }
+
     public ActivityResult execStartActivity(Context context, IBinder binder, IBinder binder1, Activity activity, Intent intent, int i, Bundle bundle) throws Throwable {
+        resolveVirtualActivityIntent(context, intent);
         return invokeExecStartActivity(mBaseInstrumentation,
                 Context.class,
                 IBinder.class,
@@ -452,6 +522,7 @@ public class BaseInstrumentationDelegate extends Instrumentation {
     }
 
     public ActivityResult execStartActivity(Context context, IBinder binder, IBinder binder1, String str, Intent intent, int i, Bundle bundle) throws Throwable {
+        resolveVirtualActivityIntent(context, intent);
         return invokeExecStartActivity(mBaseInstrumentation,
                 Context.class,
                 IBinder.class,
@@ -463,6 +534,7 @@ public class BaseInstrumentationDelegate extends Instrumentation {
     }
 
     public ActivityResult execStartActivity(Context context, IBinder binder, IBinder binder1, Fragment fragment, Intent intent, int i) throws Throwable {
+        resolveVirtualActivityIntent(context, intent);
         return invokeExecStartActivity(mBaseInstrumentation,
                 Context.class,
                 IBinder.class,
@@ -473,6 +545,7 @@ public class BaseInstrumentationDelegate extends Instrumentation {
     }
 
     public ActivityResult execStartActivity(Context context, IBinder binder, IBinder binder1, Activity activity, Intent intent, int i) throws Throwable {
+        resolveVirtualActivityIntent(context, intent);
         return invokeExecStartActivity(mBaseInstrumentation,
                 Context.class,
                 IBinder.class,
@@ -483,6 +556,7 @@ public class BaseInstrumentationDelegate extends Instrumentation {
     }
 
     public ActivityResult execStartActivity(Context context, IBinder binder, IBinder binder1, Fragment fragment, Intent intent, int i, Bundle bundle) throws Throwable {
+        resolveVirtualActivityIntent(context, intent);
         return invokeExecStartActivity(mBaseInstrumentation,
                 Context.class,
                 IBinder.class,
@@ -495,6 +569,7 @@ public class BaseInstrumentationDelegate extends Instrumentation {
 
     @TargetApi(Build.VERSION_CODES.JELLY_BEAN_MR1)
     public ActivityResult execStartActivity(Context context, IBinder iBinder, IBinder iBinder2, Activity activity, Intent intent, int i, Bundle bundle, UserHandle userHandle) throws Throwable {
+        resolveVirtualActivityIntent(context, intent);
         return invokeExecStartActivity(mBaseInstrumentation,
                 Context.class,
                 IBinder.class,
