@@ -174,15 +174,6 @@ class BlackBoxLoader {
                     }
                 }
 
-                override fun isHideXposed(): Boolean {
-                    return try {
-                        mHideXposed
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Error checking hideXposed: ${e.message}")
-                        false
-                    }
-                }
-
                 override fun isEnableDaemonService(): Boolean {
                     return try {
                         mDaemonEnable
