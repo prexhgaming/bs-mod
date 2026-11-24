@@ -6,9 +6,13 @@
 
 #include <cctype>
 #include <cerrno>
+#include <chrono>
+#include <cstdarg>
+#include <cstddef>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <functional>
 #include <map>
 #include <mutex>
 #include <set>

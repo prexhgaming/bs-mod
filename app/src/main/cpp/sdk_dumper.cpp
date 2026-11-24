@@ -26,6 +26,7 @@
 #include <cerrno>
 #include <chrono>
 #include <cstdarg>
+#include <cstddef>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -36,6 +37,8 @@
 #include <thread>
 #include <vector>
 
+#include "native_utils.hpp"
+
 #define TAG "BsSdkDumper"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, TAG, __VA_ARGS__)
 #define LOGW(...) __android_log_print(ANDROID_LOG_WARN, TAG, __VA_ARGS__)
@@ -45,8 +48,10 @@ namespace {
 
 // --------------------------------------------------------------- limits
 
-constexpr uint64_t kChunk = 8u * 1024u * 1024u;          // scan chunk
-constexpr uint64_t kOverlap = 64;                         // banner may straddle
+// Buffer sizes/offsets: size_t, so they interoperate with the size_t values
+// produced by fread()/std::string on both 32-bit and 64-bit ABIs.
+constexpr size_t kChunk = 8u * 1024u * 1024u;             // scan chunk
+constexpr size_t kOverlap = 64;                           // banner may straddle
 constexpr uint64_t kMaxScanBytes = 512ull * 1024 * 1024;  // per library
 constexpr uint64_t kMaxSingleLib = 160ull * 1024 * 1024;  // copied per file
 constexpr uint64_t kMaxLibBytes = 1024ull * 1024 * 1024;  // libs total
@@ -607,11 +612,14 @@ std::string BuildManifest(const Discovery& d, const std::string& outDir,
     j += "  \"pythonFiles\": { \"count\": " + std::to_string(st.pyFiles) +
          ", \"bytes\": " + std::to_string(static_cast<unsigned long long>(st.pyBytes)) + " },\n";
     j += "  \"maps\": \"" + JsonEscape(mapsPath) + "\",\n";
+    j += "  \"libGameBase\": \"" + std::to_string(static_cast<unsigned long long>(bsu::libraryBase("libGame.so"))) + "\",\n";
     j += "  \"modules\": [";
-    const size_t limit = std::min<size_t>(d.modules.size(), 200);
+    // native_utils: every mapped path, deduplicated, in maps order.
+    const std::vector<std::string> modules = bsu::loadedModules();
+    const size_t limit = std::min<size_t>(modules.size(), 200);
     for (size_t i = 0; i < limit; ++i) {
         if (i != 0) j += ", ";
-        j += "\"" + JsonEscape(d.modules[i]) + "\"";
+        j += "\"" + JsonEscape(modules[i]) + "\"";
     }
     j += "]\n}\n";
     return j;
@@ -631,9 +639,13 @@ void RunDump() {
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(90);
     int attempt = 0;
     for (;;) {
-        std::string maps;
-        if (ReadWhole("/proc/self/maps", &maps)) {
-            d = Discover(MapsPaths(maps));
+        // native_utils gives us the same answer through the hardened xDL path:
+        // is the game's CPython library mapped yet?
+        if (bsu::isLibraryLoaded("libGame.so")) {
+            std::string maps;
+            if (ReadWhole("/proc/self/maps", &maps)) {
+                d = Discover(MapsPaths(maps));
+            }
             if (d.ok) {
                 Logf("discover: ready after %d attempt(s)", attempt + 1);
                 mapsOut.swap(maps);
@@ -657,11 +669,20 @@ void RunDump() {
         return;
     }
 
+    // Resolve the game's base address and a handful of symbols through xDL
+    // instead of parsing /proc/self/maps by hand. This doubles as a sanity
+    // check that the library is really loaded the way we expect.
+    const uintptr_t gameBase = bsu::libraryBase("libGame.so");
     Logf("game    : %s", d.gamePkg.c_str());
     Logf("host    : %s", d.hostPkg.c_str());
     Logf("sandbox : %s", d.sandboxRoot.c_str());
     Logf("libDir  : %s", d.libDir.c_str());
     Logf("dataDir : %s", d.dataDir.empty() ? "(none)" : d.dataDir.c_str());
+    if (gameBase != 0) {
+        Logf("libGame.so base: 0x%lx", static_cast<unsigned long>(gameBase));
+    } else {
+        Logf("libGame.so base: unresolved (xdl_open failed)");
+    }
 
     const std::string outDir = OutputDirFor(d);
     if (outDir.empty()) {
