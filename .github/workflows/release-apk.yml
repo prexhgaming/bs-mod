@@ -26,8 +26,19 @@ jobs:
         with:
           packages: 'platform-tools'
 
-      - name: Setup Gradle
+      - name: Setup Gradle (caches dependencies + wrapper)
         uses: gradle/actions/setup-gradle@v4
+
+      - name: Cache Gradle build state
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches/build-cache-1
+            ~/.gradle/caches/8.7
+            .gradle
+          key: gradle-build-${{ runner.os }}-${{ hashFiles('**/*.gradle*', 'gradle.properties', 'gradle/libs.versions.toml', 'gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: |
+            gradle-build-${{ runner.os }}-
 
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
