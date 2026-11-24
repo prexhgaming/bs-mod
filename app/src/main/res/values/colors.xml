@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Brand -->
+    <color name="primary">#3F3F3F</color>
+    <color name="primary_dark">#3F3F3F</color>
+    <color name="primary_light">#3F3F3F</color>
+    <color name="accent">#FF5A4E</color>
+    <color name="accent_ripple">#33FF5A4E</color>
+    <color name="primary_text">#212121</color>
+    <color name="secondary_text">#757575</color>
+    <color name="white">#FFFFFFFF</color>
+
+    <!-- Single screen surface -->
+    <color name="surface_bg">#F4F5F7</color>
+    <color name="card_bg">#FFFFFF</color>
+    <color name="toolbar_bg">#14161A</color>
+    <color name="toolbar_subtitle">#B9BEC7</color>
+    <color name="banner_bg">#FFFFFF</color>
+    <color name="text_primary">#14161A</color>
+    <color name="text_secondary">#6B7280</color>
+
+    <!-- Status chips -->
+    <color name="chip_ok_bg">#E7F6EC</color>
+    <color name="chip_ok_text">#1B7F3B</color>
+    <color name="chip_warn_bg">#FDECEA</color>
+    <color name="chip_warn_text">#C0392B</color>
+    <color name="chip_neutral_bg">#ECEFF3</color>
+    <color name="chip_neutral_text">#5B6470</color>
+</resources>
