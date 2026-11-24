@@ -11,7 +11,6 @@
 - `:Bcore` — engine: Java (`top.niunaijun.blackbox.BlackBoxCore`), AIDL (`Bcore/src/main/aidl`), native C++ (`Bcore/src/main/cpp`). No prebuilt `.so` — compiled from source by the NDK.
 - `:black-reflection` — annotation/reflection stubs required by `:Bcore`.
 - `:compiler` — annotation processor for `:black-reflection`.
-- `blackbox-gallery-stub/` — upstream helper app, **not** in `settings.gradle` and unused here.
 
 ## Launcher UI (`:app`)
 - One screen, one game, one action. The old multi-app grid/list is gone — do not reintroduce an app list or multi-app selection.
