@@ -5,6 +5,7 @@
 - Source: `github.com/BotBotHack/NewBlackboxSRC` (branch `main`), cloned into the project root. No `.git` from upstream was imported (the app's own `.git/` metadata is kept).
 
 ## Modules
+
 - `:app` — Kotlin demo UI (`top.niunaijun.blackboxa`), launcher `WelcomeActivity`, `Application` = `.app.App`.
 - `:Bcore` — core engine: Java (`top.niunaijun.blackbox.BlackBoxCore`), 55 AIDL files (`Bcore/src/main/aidl`), and native C++ (`Bcore/src/main/cpp`, `Android.mk` + `Application.mk`). No prebuilt `.so` are committed — native code is compiled from source by NDK.
 
