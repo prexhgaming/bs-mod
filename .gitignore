@@ -36,3 +36,6 @@ split_config.*.apk
 
 # Game resource archives (reference material, not project source)
 *.mpk
+
+# Uploaded reference source archives (read for ideas, not built)
+*.zip

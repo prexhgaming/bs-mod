@@ -202,19 +202,6 @@ class GameActivity : AppCompatActivity() {
         }
     }
 
-    /**
-     * The dump writes into the public Downloads folder, so on API 30+ it needs
-     * "All files access" (`MANAGE_EXTERNAL_STORAGE`). That permission has no
-     * runtime dialog, so we open the dedicated Settings screen where the user can
-     * flip it; the checkbox stays enabled either way and the dump simply falls
-     * back to app storage if the grant is never given.
-     */
-    private fun requestDumpAccessIfNeeded() {
-        if (PySdkDumper.hasExternalWriteAccess(this)) return
-        val intent = PySdkDumper.allFilesAccessIntent(this) ?: return
-        runCatching { startActivity(intent) }
-    }
-
     private fun showOverflow() {
         val popup = PopupMenu(this, binding.moreButton)
         popup.menuInflater.inflate(R.menu.menu_launcher, popup.menu)
@@ -241,11 +228,10 @@ class GameActivity : AppCompatActivity() {
                     val enabled = !item.isChecked
                     item.isChecked = enabled
                     PySdkDumper.setEnabled(this, enabled)
-                    // The dump no longer runs from here: `libbs_dumper.so` is loaded
-                    // inside the game's own process (guest lifecycle) while this
-                    // checkbox is on, and its JNI_OnLoad spawns the dump thread.
-                    // So the toggle takes effect on the next game launch.
-                    if (enabled) requestDumpAccessIfNeeded()
+                    // No permission is needed: the dump lands in the game's own
+                    // app-specific external dir (Android/data/<pkg>/sdk). The
+                    // toggle is read when the game is started, so it takes effect
+                    // on the next launch.
                     toast(if (enabled) R.string.sdk_dump_enabled else R.string.sdk_dump_disabled)
                     true
                 }

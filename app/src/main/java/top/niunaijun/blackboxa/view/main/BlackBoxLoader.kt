@@ -146,12 +146,12 @@ class BlackBoxLoader {
                         Log.d(TAG, "afterApplicationOnCreate: pkg $packageName, processName $processName")
                         // The guest lifecycle runs inside the game's own process,
                         // which is the only place the statically linked CPython
-                        // exists. When the dumper is enabled, load libbs_dumper.so
-                        // here: its JNI_OnLoad spawns the worker thread, and the
-                        // single JNI call hands over the Downloads folder. Native
-                        // discovers the rest of the sandbox layout itself.
+                        // exists. The launcher decided before starting the game
+                        // (PySdkDumper.prepareLaunch); here we only obey that
+                        // decision and load libbs_dumper.so, whose JNI_OnLoad
+                        // spawns the worker. Nothing is passed across JNI.
                         if (application != null && packageName == GameTarget.PACKAGE_NAME) {
-                            PySdkDumper.arm(application, packageName)
+                            PySdkDumper.loadIfArmed(packageName, GameTarget.USER_ID)
                         }
                         RockerManager.init(application,userId)
                     } catch (e: Exception) {

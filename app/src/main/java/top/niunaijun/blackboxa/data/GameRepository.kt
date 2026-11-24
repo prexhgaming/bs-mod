@@ -8,6 +8,7 @@ import top.niunaijun.blackbox.BlackBoxCore
 import top.niunaijun.blackboxa.GameTarget
 import top.niunaijun.blackboxa.app.App
 import top.niunaijun.blackboxa.bean.AppInfo
+import top.niunaijun.blackboxa.util.PySdkDumper
 
 /**
  * Everything that touches the BlackBox engine lives here.
@@ -124,6 +125,9 @@ class GameRepository {
 
     fun launch(packageName: String): Boolean {
         return runCatching {
+            // The launcher owns the decision: record it before the game process
+            // exists, so the guest lifecycle hook can read it back.
+            PySdkDumper.prepareLaunch(App.getContext(), packageName, GameTarget.USER_ID)
             BlackBoxCore.get().launchApk(packageName, GameTarget.USER_ID)
         }.getOrDefault(false)
     }

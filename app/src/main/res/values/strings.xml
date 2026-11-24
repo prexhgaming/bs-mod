@@ -40,7 +40,7 @@
 
     <!-- Python SDK dumper (more menu, checkable) -->
     <string name="action_dump_sdk">Python SDK dumper</string>
-    <string name="sdk_dump_enabled">SDK dumper enabled — dump runs on next game launch</string>
+    <string name="sdk_dump_enabled">SDK dumper armed — runs on next game launch</string>
     <string name="sdk_dump_disabled">SDK dumper disabled</string>
 
     <!-- ===================== Legacy screens ===================== -->

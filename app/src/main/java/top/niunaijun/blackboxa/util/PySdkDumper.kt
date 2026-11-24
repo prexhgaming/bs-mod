@@ -1,187 +1,163 @@
 package top.niunaijun.blackboxa.util
 
-import android.Manifest
 import android.content.Context
-import android.content.Intent
-import android.content.pm.PackageManager
-import android.net.Uri
-import android.os.Build
-import android.os.Environment
-import android.provider.Settings
 import android.util.Log
-import androidx.core.content.ContextCompat
 import java.io.File
 
 /**
  * Python SDK dumper (opt-in).
  *
  * The target game statically links CPython into its own `libGame.so`, so the
- * runtime only exists **inside the game process**. `libbs_dumper.so` is therefore
- * loaded into that process while the game starts: its `JNI_OnLoad` spawns a
- * worker thread which discovers the sandbox layout from `/proc/self/maps` and
- * writes the dump there.
+ * interpreter only exists **inside the game's process**. The work therefore has
+ * to happen there, but the *decision* belongs to the launcher:
  *
- * Native needs exactly one thing from Java — the public Downloads path, which
- * only the framework can resolve — and that is what [nativeStart] hands over.
- * Everything else is resolved natively, in the process that owns the runtime.
+ *  1. The user flips the toggle in the "More" menu -> persisted in prefs.
+ *  2. Before starting the game, the launcher calls [prepareLaunch], which
+ *     leaves an arm-request file in the game's sandbox.
+ *  3. The guest lifecycle hook calls [loadIfArmed] inside the game's process;
+ *     only then is `libbs_dumper.so` loaded.
+ *  4. A `__attribute__((constructor))` in that library fires the moment the
+ *     dynamic linker loads it, detaches a worker thread and returns, so the
+ *     game's main thread never blocks. The worker discovers everything itself
+ *     (package, native-lib dir, sandbox layout) from `/proc/self/maps` and
+ *     writes to `/storage/emulated/0/Android/data/<game-pkg>/sdk`.
  *
- * The toggle lives in the launcher's checkable "More" menu item and is persisted,
- * so flipping it takes effect on the **next** game launch.
+ * There are deliberately no `external fun` declarations here and no `JNI_OnLoad`
+ * in the library: the native side needs nothing from Java, so nothing crosses
+ * the JNI boundary in either direction.
  */
 object PySdkDumper {
 
     private const val TAG = "PySdkDumper"
+
     private const val PREFS = "bs_dumper_prefs"
     private const val KEY_ENABLED = "sdk_dumper_enabled"
     private const val NATIVE_LIB = "bs_dumper"
-    private const val DUMP_DIR_NAME = "sdk"
 
-    @Volatile private var loaded = false
-    @Volatile private var loadFailed = false
+    /** Written by the launcher, read by the guest process. */
+    private const val ARM_FILE = "sdk_dumper.arm"
 
-    /**
-     * Hands native the one path Java alone can resolve. Native arms its dump
-     * thread with it; all other work happens on a thread inside the library.
-     */
-    private external fun nativeStart(outputDir: String)
+    /** Our own applicationId; the engine keeps the sandbox under its data dir. */
+    private const val HOST_PACKAGE = "top.niunaijun.blackboxa"
 
-    // ------------------------------------------------------------------- prefs
+    @Volatile
+    private var loaded = false
 
-    fun isEnabled(context: Context): Boolean =
-        prefs(context).getBoolean(KEY_ENABLED, false)
+    @Volatile
+    private var loadFailed = false
 
-    fun setEnabled(context: Context, enabled: Boolean) {
-        prefs(context).edit().putBoolean(KEY_ENABLED, enabled).apply()
-        Log.i(TAG, "dumper ${if (enabled) "enabled" else "disabled"}")
-    }
+    // ------------------------------------------------------------ toggle
 
     private fun prefs(context: Context) =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
-    // ------------------------------------------------------------------ output
+    fun isEnabled(context: Context): Boolean =
+        runCatching { prefs(context).getBoolean(KEY_ENABLED, false) }.getOrDefault(false)
 
-    /**
-     * `/storage/emulated/0/Download/<game-package>/sdk`.
-     *
-     * The package is passed in instead of read from the context so the caller
-     * decides which app the dump is attributed to.
-     */
-    fun outputDir(context: Context, packageName: String): File {
-        val downloads =
-            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
-        return File(File(downloads, packageName), DUMP_DIR_NAME)
+    fun setEnabled(context: Context, enabled: Boolean) {
+        runCatching {
+            prefs(context).edit().putBoolean(KEY_ENABLED, enabled).apply()
+        }.onFailure { Log.e(TAG, "cannot persist toggle", it) }
+        Log.i(TAG, "toggle -> $enabled")
     }
 
-    /**
-     * True when the dump may write into the public Downloads folder.
-     *
-     * API <= 29: `WRITE_EXTERNAL_STORAGE` (legacy external storage allows raw
-     * paths). API >= 30: "All files access" (`MANAGE_EXTERNAL_STORAGE`), because
-     * scoped storage rejects raw writes into `Download/` without it.
-     */
-    @JvmStatic
-    fun hasExternalWriteAccess(context: Context): Boolean = when {
-        Build.VERSION.SDK_INT >= Build.VERSION_CODES.R ->
-            Environment.isExternalStorageManager()
-
-        else -> ContextCompat.checkSelfPermission(
-            context, Manifest.permission.WRITE_EXTERNAL_STORAGE
-        ) == PackageManager.PERMISSION_GRANTED
-    }
+    // ------------------------------------------------------------ arm request
 
     /**
-     * Settings screen granting "All files access", or null below API 30.
+     * Absolute path of the arm request.
      *
-     * This permission has no runtime dialog — the user has to flip it manually,
-     * so we deep-link straight to this app's entry in that list.
+     * Built from constants rather than from a [Context] on purpose: inside the
+     * guest process the engine redirects app paths into the sandbox, so a
+     * Context-derived path would resolve somewhere else than on the host side.
+     * The file lives in the game's *virtual* data dir, which the engine creates
+     * and both processes can reach by this exact real path.
      */
-    @JvmStatic
-    fun allFilesAccessIntent(context: Context): Intent? {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return null
-        return Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION)
-            .setData(Uri.fromParts("package", context.packageName, null))
-    }
-
-    /**
-     * Directory the dump is really written to.
-     *
-     * A raw path into the public Downloads folder needs "All files access" on
-     * API 30+; without it we fall back to the app's own external files dir, which
-     * is always writable. Returns null if nothing is writable.
-     */
-    fun writableOutputDir(context: Context, packageName: String): File? {
-        val candidates = listOfNotNull(
-            outputDir(context, packageName).takeIf { hasExternalWriteAccess(context) },
-            context.getExternalFilesDir(null)?.let { File(it, DUMP_DIR_NAME) },
-            File(context.filesDir, DUMP_DIR_NAME)
+    private fun armFile(packageName: String, userId: Int): File =
+        File(
+            "/data/user/0/$HOST_PACKAGE/blackbox/data/user/$userId/" +
+                "$packageName/files/$ARM_FILE"
         )
-        for (dir in candidates) {
-            if (isWritable(dir)) return dir
-        }
-        Log.e(TAG, "no writable output directory among $candidates")
-        return null
-    }
-
-    /** mkdirs + a real write probe, so native never fails on a read-only path. */
-    private fun isWritable(dir: File): Boolean {
-        if (!dir.exists() && !dir.mkdirs()) {
-            Log.w(TAG, "cannot create ${dir.absolutePath}")
-            return false
-        }
-        return try {
-            val probe = File(dir, ".probe")
-            val created = probe.createNewFile()
-            probe.delete()
-            created || dir.canWrite()
-        } catch (t: Throwable) {
-            Log.w(TAG, "not writable: ${dir.absolutePath} (${t.message})")
-            false
-        }
-    }
-
-    // ------------------------------------------------------------------ arming
 
     /**
-     * Called from the guest process once the game's `Application` exists: loads
-     * the native library (whose `JNI_OnLoad` spawns the dump thread) and hands it
-     * the Downloads folder. Returns false when disabled or unavailable. Never
-     * throws — a missing lib must not break the game launch.
+     * Host side. Called right before the game is started, so the guest process
+     * always sees a decision that matches the current checkbox state.
+     *
+     * @return true when the dumper is armed for this launch.
      */
     @JvmStatic
-    fun arm(context: Context, packageName: String): Boolean {
+    fun prepareLaunch(
+        context: Context,
+        packageName: String,
+        userId: Int
+    ): Boolean {
+        val file = armFile(packageName, userId)
         if (!isEnabled(context)) {
-            Log.i(TAG, "arm: disabled, nothing to do")
+            if (file.exists() && !file.delete()) {
+                Log.w(TAG, "prepareLaunch: cannot remove ${file.absolutePath}")
+            }
+            Log.i(TAG, "prepareLaunch: disabled, dumper stays off")
             return false
         }
-        if (!ensureLoaded()) return false
 
-        val dir = writableOutputDir(context, packageName) ?: run {
-            Log.e(TAG, "arm: no writable output dir for $packageName")
-            return false
-        }
         return try {
-            nativeStart(dir.absolutePath)
-            Log.i(TAG, "arm: dump armed for $packageName -> ${dir.absolutePath}")
+            file.parentFile?.mkdirs()
+            file.writeText("armed ${System.currentTimeMillis()}\n")
+            Log.i(TAG, "prepareLaunch: armed -> ${file.absolutePath}")
             true
         } catch (t: Throwable) {
-            Log.e(TAG, "arm failed", t)
+            Log.e(TAG, "prepareLaunch: cannot write ${file.absolutePath}", t)
             false
         }
     }
 
-    /** Loads `libbs_dumper.so`. Safe to call repeatedly; never throws. */
+    /** True when the launcher armed the dumper for the current game launch. */
+    @JvmStatic
+    fun isArmed(packageName: String, userId: Int): Boolean =
+        runCatching { armFile(packageName, userId).isFile }.getOrDefault(false)
+
+    /** Drops the arm request once it has been consumed. */
+    @JvmStatic
+    fun consumeArm(packageName: String, userId: Int) {
+        runCatching {
+            val file = armFile(packageName, userId)
+            if (file.exists() && !file.delete()) {
+                Log.w(TAG, "consumeArm: cannot delete ${file.absolutePath}")
+            }
+        }
+    }
+
+    // ------------------------------------------------------------ guest side
+
+    /**
+     * Guest side, called from the game's `Application.onCreate`. Loads the
+     * native library only when the launcher armed this launch. Never throws —
+     * a missing or failing library must not break the game.
+     */
+    @JvmStatic
+    fun loadIfArmed(packageName: String, userId: Int): Boolean {
+        if (!isArmed(packageName, userId)) {
+            Log.i(TAG, "load: not armed by the launcher, skipping")
+            return false
+        }
+        val ok = ensureLoaded()
+        if (ok) {
+            Log.i(TAG, "load: lib$NATIVE_LIB.so loaded, worker owns the dump")
+            consumeArm(packageName, userId)
+        }
+        return ok
+    }
+
     @Synchronized
-    fun ensureLoaded(): Boolean {
+    private fun ensureLoaded(): Boolean {
         if (loaded) return true
         if (loadFailed) return false
         return try {
             System.loadLibrary(NATIVE_LIB)
             loaded = true
-            Log.i(TAG, "loaded lib$NATIVE_LIB.so")
             true
         } catch (t: Throwable) {
             loadFailed = true
-            Log.e(TAG, "lib$NATIVE_LIB.so unavailable: ${t.message}")
+            Log.e(TAG, "cannot load lib$NATIVE_LIB.so", t)
             false
         }
     }
