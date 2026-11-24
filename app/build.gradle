@@ -1,3 +1,125 @@
+<<<<<<< LOCAL (Your changes)
+plugins {
+    alias(libs.plugins.android.application)
+    alias(libs.plugins.jetbrains.kotlin.android)
+}
+
+def keystorePropertiesFile = rootProject.file('app/keystore/keystore.properties')
+def keystoreProperties = new Properties()
+if (keystorePropertiesFile.exists()) {
+    keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
+}
+
+android {
+
+    namespace 'top.niunaijun.blackboxa'
+    compileSdk rootProject.ext.compileSdkVersion
+    ndkVersion = "29.0.13846066"
+
+    defaultConfig {
+        applicationId "top.niunaijun.blackboxa"
+        minSdk rootProject.ext.minSdk
+        targetSdk rootProject.ext.targetSdkVersion
+        versionCode rootProject.ext.versionCode
+        versionName rootProject.ext.versionName
+
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+
+        // The UI is English-only: dropping the ~60 locales that appcompat/material
+        // ship removes a few hundred KB of strings/NOTICE data from the APK.
+        resourceConfigurations += ['en']
+
+        // Single universal APK — no split APKs, only the two target ABIs.
+        ndk {
+            abiFilters 'armeabi-v7a', 'arm64-v8a'
+            debugSymbolLevel 'none'
+        }
+    }
+
+    signingConfigs {
+        release {
+            if (keystorePropertiesFile.exists()) {
+                storeFile file("keystore/${keystoreProperties['storeFile']}")
+                storePassword keystoreProperties['storePassword']
+                keyAlias keystoreProperties['keyAlias']
+                keyPassword keystoreProperties['keyPassword']
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            // R8 does the shrinking: see proguard-rules.pro for what the engine
+            // needs to keep. Everything else (app code, unused libs) gets trimmed.
+            minifyEnabled false
+            shrinkResources false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            signingConfig keystorePropertiesFile.exists() ? signingConfigs.release : signingConfigs.debug
+        }
+        debug {
+            minifyEnabled false
+            shrinkResources false
+        }
+    }
+    
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    
+    buildFeatures {
+        viewBinding true
+    }
+    
+    kotlinOptions {
+        jvmTarget = '17'
+    }
+    
+    packaging {
+        jniLibs {
+            // Compressed native libs = smaller APK.
+            useLegacyPackaging true
+        }
+        resources {
+            excludes += [
+                    'META-INF/AL2.0',
+                    'META-INF/LGPL2.1',
+                    'META-INF/*.kotlin_module',
+                    'META-INF/*.version',
+                    'META-INF/DEPENDENCIES',
+                    'META-INF/LICENSE*',
+                    'META-INF/NOTICE*',
+                    'kotlin/**',
+                    'DebugProbesKt.bin'
+            ]
+        }
+    }
+}
+
+dependencies {
+    implementation fileTree(dir: "libs", include: ["*.jar", "*.aar"])
+    implementation project(':Bcore')
+
+    implementation libs.appcompat
+    implementation libs.material
+    implementation libs.constraintlayout
+    implementation libs.core.ktx
+    implementation libs.recyclerview
+
+    // Single-screen UI: live data + coroutines only.
+    implementation "androidx.lifecycle:lifecycle-viewmodel-ktx:2.6.2"
+    implementation "androidx.lifecycle:lifecycle-livedata-ktx:2.6.2"
+    implementation "androidx.lifecycle:lifecycle-runtime-ktx:2.6.2"
+
+    // Long-press app actions dialog.
+    implementation 'com.afollestad.material-dialogs:core:3.3.0'
+
+    testImplementation libs.junit
+    androidTestImplementation libs.ext.junit
+    androidTestImplementation libs.espresso.core
+}
+
+=======
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.jetbrains.kotlin.android)
@@ -113,3 +235,5 @@ dependencies {
     androidTestImplementation libs.ext.junit
     androidTestImplementation libs.espresso.core
 }
+
+>>>>>>> REMOTE (Changes from GitHub)
