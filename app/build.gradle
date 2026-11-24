@@ -172,8 +172,8 @@ android {
         release {
             // R8 does the shrinking: see proguard-rules.pro for what the engine
             // needs to keep. Everything else (app code, unused libs) gets trimmed.
-            minifyEnabled true
-            shrinkResources true
+            minifyEnabled false
+            shrinkResources false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
             signingConfig keystorePropertiesFile.exists() ? signingConfigs.release : signingConfigs.debug
         }
@@ -182,16 +182,20 @@ android {
             shrinkResources false
         }
     }
+    
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
     }
+    
     buildFeatures {
         viewBinding true
     }
+    
     kotlinOptions {
         jvmTarget = '17'
     }
+    
     packaging {
         jniLibs {
             // Compressed native libs = smaller APK.

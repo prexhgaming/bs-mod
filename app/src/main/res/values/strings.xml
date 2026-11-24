@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Knives Out Sandbox</string>
+    <string name="app_name">BS-KILLER</string>
     <string name="toolbar_subtitle">Sandbox · user %1$d</string>
 
     <!-- Status chips -->
