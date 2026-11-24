@@ -26,3 +26,6 @@ local.properties
 # App tooling bookkeeping, not project source.
 .polydev/
 .base/
+
+# Local scratch scripts
+/tmp/
