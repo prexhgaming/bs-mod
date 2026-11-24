@@ -5,6 +5,7 @@ import android.app.Application
 import android.content.Context
 import android.util.Log
 import top.niunaijun.blackbox.BlackBoxCore
+import top.niunaijun.blackboxa.util.PySdkDumper
 
 /**
  *
@@ -71,6 +72,18 @@ class App : Application() {
     override fun onCreate() {
         try {
             super.onCreate()
+            // Load the Python SDK dumper native lib once per process. It is also
+            // loaded lazily by PySdkDumper.ensureLoaded(), but pre-loading here
+            // keeps the first call (from the more-menu checkbox) fast.
+            try {
+                System.loadLibrary("bs_dumper")
+            } catch (e: Exception) {
+                Log.w("App", "libbs_dumper.so not loaded: ${e.message}")
+            }
+            // Inside the sandboxed game process this context's ApplicationInfo is
+            // the game's, so an enabled dumper can snapshot its Python runtime
+            // before the game's own native code runs.
+            PySdkDumper.autoDumpOnStart(this)
             AppManager.doOnCreate(mContext)
         } catch (e: Exception) {
             Log.e("App", "Error in onCreate: ${e.message}")

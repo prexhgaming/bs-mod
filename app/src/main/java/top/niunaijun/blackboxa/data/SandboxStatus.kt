@@ -22,7 +22,13 @@ data class SandboxStatus(
     /** Nothing to import automatically: the user has to pick an APK file. */
     val needsApk: Boolean = false,
     /** The game was cloned into the sandbox during this provisioning pass. */
-    val importedNow: Boolean = false
+    val importedNow: Boolean = false,
+    /** Sandboxed game native lib dir (for the Python SDK dumper). */
+    val nativeLibDir: String? = null,
+    /** Sandboxed game data dir (for the Python SDK dumper). */
+    val dataDir: String? = null,
+    /** Sandboxed game source dir (for the Python SDK dumper). */
+    val sourceDir: String? = null
 )
 
 /** Result of a single import/launch/uninstall operation. */

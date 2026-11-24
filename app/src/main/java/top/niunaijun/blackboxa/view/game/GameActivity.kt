@@ -35,6 +35,7 @@ import top.niunaijun.blackboxa.data.GameRepository
 import top.niunaijun.blackboxa.data.SandboxStatus
 import top.niunaijun.blackboxa.databinding.ActivityGameBinding
 import top.niunaijun.blackboxa.util.InjectionUtil
+import top.niunaijun.blackboxa.util.PySdkDumper
 import top.niunaijun.blackboxa.util.inflate
 import top.niunaijun.blackboxa.util.toast
 import kotlin.math.abs
@@ -204,6 +205,8 @@ class GameActivity : AppCompatActivity() {
     private fun showOverflow() {
         val popup = PopupMenu(this, binding.moreButton)
         popup.menuInflater.inflate(R.menu.menu_launcher, popup.menu)
+        // Reflect the persisted dumper toggle before the popup is shown.
+        popup.menu.findItem(R.id.action_dump_sdk)?.isChecked = PySdkDumper.isEnabled(this)
         popup.setOnMenuItemClickListener { item ->
             when (item.itemId) {
                 R.id.action_refresh -> {
@@ -218,6 +221,55 @@ class GameActivity : AppCompatActivity() {
 
                 R.id.action_select_apk -> {
                     pickApk.launch(arrayOf("*/*"))
+                    true
+                }
+
+                R.id.action_dump_sdk -> {
+                    val enabled = !item.isChecked
+                    item.isChecked = enabled
+                    PySdkDumper.setEnabled(this, enabled)
+                    if (enabled) {
+                        val status = viewModel.status.value
+                        if (status?.gameInSandbox == true) {
+                            toast(R.string.sdk_dump_running)
+                            val pkg = GameTarget.PACKAGE_NAME
+                            // Run on a background thread — the native dumper does file I/O.
+                            Thread {
+                                val result = PySdkDumper.run(
+                                    this@GameActivity,
+                                    pkg,
+                                    status.nativeLibDir.orEmpty(),
+                                    status.dataDir.orEmpty(),
+                                    status.sourceDir.orEmpty()
+                                )
+                                runOnUiThread {
+                                    if (result == null) {
+                                        item.isChecked = false
+                                        toast(R.string.sdk_dump_fail)
+                                        return@runOnUiThread
+                                    }
+                                    val parts = result.split("|", limit = 3)
+                                    when (parts.getOrNull(0)) {
+                                        "OK" -> toast(getString(R.string.sdk_dump_ok, parts.getOrNull(1).orEmpty()))
+                                        "FAIL" -> {
+                                            val err = parts.getOrNull(2).orEmpty()
+                                            if (err.contains("no python runtime", ignoreCase = true)) {
+                                                toast(getString(R.string.sdk_dump_no_python, pkg))
+                                            } else {
+                                                toast(getString(R.string.sdk_dump_fail, err))
+                                            }
+                                        }
+                                        else -> toast(result)
+                                    }
+                                }
+                            }.start()
+                        } else {
+                            toast(getString(R.string.sdk_dump_no_python, GameTarget.DISPLAY_NAME))
+                            item.isChecked = false
+                        }
+                    } else {
+                        toast(R.string.sdk_dump_disabled)
+                    }
                     true
                 }
 

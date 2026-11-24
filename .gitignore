@@ -29,3 +29,10 @@ local.properties
 
 # Local scratch scripts
 /tmp/
+
+# Uploaded game splits / local APKs (large, not project source)
+*.apk
+split_config.*.apk
+
+# Game resource archives (reference material, not project source)
+*.mpk

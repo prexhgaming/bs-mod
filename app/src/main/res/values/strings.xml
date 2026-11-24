@@ -38,6 +38,15 @@
     <string name="dialog_clear_data_title">Clear game data?</string>
     <string name="dialog_clear_data_body">Saves and settings for %1$s inside the sandbox will be deleted. This cannot be undone.</string>
 
+    <!-- Python SDK dumper (more menu, checkable) -->
+    <string name="action_dump_sdk">Python SDK dumper</string>
+    <string name="sdk_dump_enabled">SDK dumper enabled — dump runs on next launch</string>
+    <string name="sdk_dump_disabled">SDK dumper disabled</string>
+    <string name="sdk_dump_running">Dumping Python SDK…</string>
+    <string name="sdk_dump_ok">SDK dumped to %1$s</string>
+    <string name="sdk_dump_fail">SDK dump failed: %1$s</string>
+    <string name="sdk_dump_no_python">No Python runtime detected in %1$s</string>
+
     <!-- ===================== Legacy screens ===================== -->
     <!-- Actions -->
     <string name="action_select_apk">Select APK</string>

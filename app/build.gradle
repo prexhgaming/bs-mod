@@ -69,6 +69,14 @@ android {
     buildFeatures {
         viewBinding true
     }
+
+    // CMake module: compiles app/src/main/cpp/sdk_dumper.cpp into libbs_dumper.so,
+    // the Python SDK dumper. Loaded per-process (host app + sandboxed game process).
+    externalNativeBuild {
+        cmake {
+            path "src/main/cpp/CMakeLists.txt"
+        }
+    }
     
     kotlinOptions {
         jvmTarget = '17'
