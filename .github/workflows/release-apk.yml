@@ -9,8 +9,7 @@ permissions:
 
 jobs:
   release:
-    # Pin runner: setup-android@v3 is known-broken on newer ubuntu-latest images.
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout
@@ -22,45 +21,13 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v4
         with:
-          # Accept licenses here so the SDK is usable right away.
-          accept-android-sdk-licenses: true
+          packages: 'platform-tools'
 
-      - name: Diagnose Android SDK setup
-        run: |
-          echo "ANDROID_HOME=$ANDROID_HOME"
-          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
-          export ANDROID_HOME="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
-          export ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
-          echo "PATH=$PATH"
-          echo "sdkmanager: $(command -v sdkmanager || echo 'NOT ON PATH')"
-          ls -la "$ANDROID_HOME/cmdline-tools/latest/bin" 2>/dev/null || true
-
-      - name: Install SDK components
-        run: |
-          export ANDROID_HOME="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
-          export ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
-          export PATH="$ANDROID_HOME/cmdline-tools/latest/bin:$PATH"
-          echo "=== platforms ==="
-          sdkmanager --list_installed 2>&1 | grep -E "platforms|platform-tools" || true
-          sdkmanager --install "platforms;android-35" "build-tools;35.0.0" "platform-tools"
-          # Pinned by app/build.gradle + Bcore/build.gradle (ndkVersion).
-          # If the SDK repo lacks it, AGP resolves the NDK itself during build.
-          sdkmanager --install "ndk;29.0.13846066" || true
-          echo "=== installed NDKs ==="
-          ls "$ANDROID_HOME/ndk" 2>/dev/null || echo "(none)"
-
-      - name: Cache Gradle
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-          key: gradle-${{ runner.os }}-${{ hashFiles('**/*.gradle*', 'gradle/wrapper/gradle-wrapper.properties', 'gradle/libs.versions.toml') }}
-          restore-keys: |
-            gradle-${{ runner.os }}-
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
 
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
@@ -68,9 +35,8 @@ jobs:
       - name: Build release APK
         id: build
         run: |
-          # pipefail makes a Gradle failure fail this step even through tee.
           set -o pipefail
-          ./gradlew :app:assembleRelease 2>&1 | tee build.log
+          ./gradlew :app:assembleRelease --stacktrace 2>&1 | tee build.log
 
       - name: Send build.log to Telegram on failure
         if: failure()
@@ -87,7 +53,6 @@ jobs:
             -d chat_id="$TELEGRAM_CHAT_ID" \
             -d text="Build FAILED - ${GITHUB_REF_NAME} @ ${GITHUB_SHA::7}. Sending build.log..." || true
           if [ -f build.log ]; then
-            # Telegram bot uploads cap at 50 MB; keep the tail with the actual error.
             if [ "$(stat -c%s build.log)" -gt 20000000 ]; then
               tail -c 20000000 build.log > build.log.trim
               mv build.log.trim build.log
