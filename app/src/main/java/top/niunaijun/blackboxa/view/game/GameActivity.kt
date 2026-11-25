@@ -473,7 +473,10 @@ class GameActivity : AppCompatActivity() {
 
     private fun renderNotice(status: SandboxStatus) {
         val missing = !status.busy && status.needsApk
-        val failed = !status.busy && !status.needsApk && !status.message.isNullOrBlank()
+        // A failed Google clone lands here too: the game imported fine, so
+        // nothing else would report it and the failure used to be Logcat-only.
+        val detail = status.message ?: status.gmsError
+        val failed = !status.busy && !status.needsApk && !detail.isNullOrBlank()
         val visible = missing || failed
 
         binding.noticeCard.isVisible = visible
@@ -487,7 +490,7 @@ class GameActivity : AppCompatActivity() {
         } else {
             noticePicksApk = false
             binding.noticeTitle.setText(R.string.notice_error_title)
-            binding.noticeBody.text = status.message
+            binding.noticeBody.text = detail
             binding.noticeAction.setText(R.string.action_retry)
         }
     }

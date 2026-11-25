@@ -862,21 +862,43 @@ public class BPackageManagerService extends IBPackageManagerService.Stub impleme
         if (name != null && name.toLowerCase().endsWith(".apks")) {
             return true;
         }
-        // Fallback: some document providers strip/rename extensions. Detect by zip content.
+        // Fallback: some document providers strip/rename extensions. Detect by zip
+        // content, but never trust a bare ".apk entry count": ordinary APKs embed
+        // further .apk files (GMS's base.apk ships AdsDynamite and other dynamite
+        // modules in its assets), so counting two .apk entries anywhere turned
+        // real APKs into fake split bundles. GMS was installed as
+        // com.google.android.gms.policy_ads_fdr_dynamite that way and the device's
+        // actual Play services never reached the sandbox.
+        //
+        // An ordinary APK always has AndroidManifest.xml at the archive root; an
+        // .apks set has toc.pb + splits/ and never a root manifest.
         try (ZipFile zipFile = new ZipFile(file)) {
             Enumeration<? extends ZipEntry> entries = zipFile.entries();
-            int apkCount = 0;
+            boolean hasRootManifest = false;
+            boolean hasToc = false;
+            int rootApkCount = 0;
             while (entries.hasMoreElements()) {
                 ZipEntry e = entries.nextElement();
                 if (e == null || e.isDirectory()) continue;
                 String n = e.getName();
-                if (n != null && n.toLowerCase().endsWith(".apk")) {
-                    apkCount++;
-                    if (apkCount >= 2) {
-                        return true;
-                    }
+                if (n == null) continue;
+                String lower = n.toLowerCase();
+                if (lower.equals("androidmanifest.xml")) {
+                    hasRootManifest = true;
+                } else if (lower.equals("toc.pb")) {
+                    hasToc = true;
+                } else if (lower.endsWith(".apk") && n.indexOf('/') < 0) {
+                    // Direct children only: nested bundles must not count.
+                    rootApkCount++;
                 }
             }
+            if (hasRootManifest) {
+                return false;
+            }
+            if (hasToc) {
+                return true;
+            }
+            return rootApkCount >= 2;
         } catch (Throwable ignored) {
             // not zip
         }

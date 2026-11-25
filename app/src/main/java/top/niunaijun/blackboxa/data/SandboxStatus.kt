@@ -19,6 +19,12 @@ data class SandboxStatus(
     val busy: Boolean = false,
     /** Human readable failure, rendered in the banner. */
     val message: String? = null,
+    /**
+     * The Google clone failed while the game itself is fine. Kept separate from
+     * [message] so a game import error is never masked, and surfaced in the same
+     * banner (the user asked for GMS failures not to be silent).
+     */
+    val gmsError: String? = null,
     /** Nothing to import automatically: the user has to pick an APK file. */
     val needsApk: Boolean = false,
     /** The game was cloned into the sandbox during this provisioning pass. */

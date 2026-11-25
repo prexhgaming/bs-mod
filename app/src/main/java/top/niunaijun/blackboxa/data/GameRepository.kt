@@ -15,8 +15,8 @@ import top.niunaijun.blackboxa.bean.AppInfo
  *
  * The whole point of this build is that the user never has to press a "+"
  * button: if the game is installed on the phone, [provision] clones it into the
- * sandbox automatically, and Google Play services are cloned first so the game
- * has a working GMS environment.
+ * sandbox automatically, and the device's Google Play services are cloned too so
+ * the game has a working GMS environment.
  */
 class GameRepository {
 
@@ -38,6 +38,7 @@ class GameRepository {
         var gameInSandbox = isGameInSandbox()
         var message: String? = null
         var importedNow = false
+        var gmsError: String? = null
 
         if (!servicesReady) {
             Log.w(TAG, "Sandbox service did not become ready in time")
@@ -70,15 +71,19 @@ class GameRepository {
         // 2. GMS after the game is installed, so Play services are ready for it.
         if (gmsSupported && !gmsInstalled) {
             onStage(Stage.GMS)
-            val result = runCatching {
-                BlackBoxCore.get().installGms(GameTarget.USER_ID)
-            }.getOrNull()
+            val failure = installGms()
             gmsInstalled = isGmsInstalled()
-            if (result == null || !result.success) {
-                Log.w(TAG, "GMS import failed: ${result?.msg}")
-            } else {
+            if (gmsInstalled) {
                 Log.i(TAG, "GMS imported into user ${GameTarget.USER_ID}")
+            } else {
+                // Never silent: the notice card shows this, with a retry action.
+                // Without it a failed clone looks exactly like a working one, and
+                // the game just misbehaves later (sign-in errors).
+                gmsError = failure ?: "Google Play services could not be installed."
+                Log.w(TAG, "GMS import failed: $gmsError")
             }
+        } else if (!gmsSupported) {
+            Log.i(TAG, "No Google Play services on this device, nothing to clone")
         }
 
         // Refresh the host-side flags in case something changed while we worked.
@@ -92,7 +97,8 @@ class GameRepository {
             gameInSandbox = gameInSandbox,
             message = message,
             needsApk = !gameOnDevice && !gameInSandbox,
-            importedNow = importedNow
+            importedNow = importedNow,
+            gmsError = gmsError
         )
     }
 
@@ -160,6 +166,36 @@ class GameRepository {
     private fun isGmsInstalled(): Boolean = runCatching {
         BlackBoxCore.get().isInstallGms(GameTarget.USER_ID)
     }.getOrDefault(false)
+
+    /**
+     * Clones the device's Google packages into the sandbox user.
+     *
+     * @return the failure reason, or null when Play services ended up installed.
+     *
+     * Retried once: this walks ~16 packages through the engine's package service,
+     * which is still settling right after boot, so a single transient rejection
+     * used to be indistinguishable from a permanent one.
+     */
+    private fun installGms(): String? {
+        repeat(GMS_INSTALL_ATTEMPTS) { attempt ->
+            val result = runCatching {
+                BlackBoxCore.get().installGms(GameTarget.USER_ID)
+            }.getOrNull()
+
+            if (isGmsInstalled()) {
+                return null
+            }
+
+            if (attempt < GMS_INSTALL_ATTEMPTS - 1) {
+                Log.w(TAG, "GMS import attempt ${attempt + 1} failed: ${result?.msg}, retrying")
+                runCatching { Thread.sleep(GMS_RETRY_DELAY_MS) }
+            } else {
+                return result?.msg?.takeIf { it.isNotBlank() }
+                    ?: "Google Play services could not be installed."
+            }
+        }
+        return "Google Play services could not be installed."
+    }
 
     /**
      * The engine binds its package service asynchronously. Every engine call is
@@ -250,5 +286,7 @@ class GameRepository {
         private const val TAG = "GameRepository"
         private const val SERVICE_READY_RETRIES = 20
         private const val SERVICE_READY_DELAY_MS = 250L
+        private const val GMS_INSTALL_ATTEMPTS = 2
+        private const val GMS_RETRY_DELAY_MS = 500L
     }
 }
