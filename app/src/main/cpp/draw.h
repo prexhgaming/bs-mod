@@ -48,6 +48,7 @@
 #include "Dobby/dobby.h"
 #include "include/hpp/dlfcn.hpp"
 #include "include/hpp/imgui/touch.h"
+#include "include/hpp/imgui/ctx_guard.h"
 #include "include/sync_with_py.h"
 #include "include/sync_entities.h"
 #include "include/helpers.h"
@@ -411,7 +412,10 @@ ImVec2 SmoothMove(ImVec2 start, ImVec2 end, float speed) {
 int32_t (*orig_AInputQueue_getEvent)(AInputQueue *queue, AInputEvent **outEvent);
 int32_t hooked_AInputQueue_getEvent(AInputQueue *queue, AInputEvent **outEvent) {
     int32_t res = orig_AInputQueue_getEvent(queue, outEvent);
-    if (res >= 0 && setup && outEvent && *outEvent) {
+    // Replaces the bare `setup` flag: this runs on the game's input thread, where
+    // the ImGui context can be null (before the first frame rendered, or after
+    // AImGui tore its context down) and ImGui::GetIO() would dereference null.
+    if (res >= 0 && nx::imguiInputSafe() && outEvent && *outEvent) {
         int eventType = AInputEvent_getType(*outEvent);
         if (eventType == AINPUT_EVENT_TYPE_MOTION) {
             int action = AMotionEvent_getAction(*outEvent) & AMOTION_EVENT_ACTION_MASK;
@@ -521,10 +525,25 @@ DEFINES(EGLBoolean, Draw, EGLDisplay dpy, EGLSurface surface) {
     }
 
     static bool imgui_context_ready = false;
+
+    // AImGui::UnInitEnvironment() calls ImGui::DestroyContext(), which leaves no
+    // current context, so this can be null even after the first frame. Rebuild it
+    // instead of dereferencing a null GImGui further down.
+    if (!ImGui::GetCurrentContext()) {
+        nx::imguiBeginTeardown();
+        setup = false;
+        imgui_context_ready = false;
+    }
+
     if (!imgui_context_ready) {
         imgui_context_ready = true;
-        setup = true;
-        ImGui::CreateContext();
+
+        if (!ImGui::CreateContext()) {
+            // Allocation failed: stay un-ready so input keeps being ignored and the
+            // next frame retries, rather than crashing on a null context.
+            imgui_context_ready = false;
+            return _Draw(dpy, surface);
+        }
         ImGui_ImplOpenGL3_Init("#version 300 es");
 
         if (!g_logo_tex) {
@@ -578,6 +597,10 @@ DEFINES(EGLBoolean, Draw, EGLDisplay dpy, EGLSurface surface) {
         
         sync_with_py_immediate();  // 🔥 UDP VERSION
         aimgui_thread_ready = true;
+        // Publish readiness only now, once the context and its font atlas exist,
+        // so the input thread may safely touch ImGui again.
+        setup = true;
+        nx::imguiReady().store(true, std::memory_order_release);
         AddNotification("Nexora Loaded", 140, 89, 242, 3.0f);
     }
 
@@ -687,5 +710,8 @@ void IMGUI() {
 
 __attribute__((destructor))
 static void OnExit() {
+    // Flip this before tearing GL down, so input arriving during shutdown is
+    // dropped instead of touching a half-destroyed context.
+    nx::imguiBeginTeardown();
     try { SaveConfig(); CleanupGL(); } catch (...) {}
 }

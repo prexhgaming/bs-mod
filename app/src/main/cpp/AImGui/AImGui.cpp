@@ -1,6 +1,7 @@
 #include "AImGui.hpp"
 
 #include "../ANwCreator.hpp"
+#include "../include/hpp/imgui/ctx_guard.h"
 
 #include <EGL/eglext.h>
 #include <android/log.h>
@@ -217,6 +218,9 @@ bool AImGui::InitEnvironment() {
 
     m_lastSurfaceRefresh = std::chrono::steady_clock::now();
     previousEGL.Restore();
+    // The overlay context is live, so foreign threads (input hooks) may now touch
+    // ImGui safely.
+    nx::imguiReady().store(true, std::memory_order_release);
     AIMGUI_LOGI("Secure overlay ready at %d x %d", m_screenWidth, m_screenHeight);
     return true;
 }
@@ -284,6 +288,10 @@ void AImGui::UnInitEnvironment() {
     }
 
     if (m_imguiContext) {
+        // DestroyContext() below leaves the global current context null, so publish
+        // the teardown first: input hooks would otherwise call ImGui::GetIO() on a
+        // null context between here and the next frame.
+        nx::imguiBeginTeardown();
         ImGui::SetCurrentContext(m_imguiContext);
         if (m_frameActive) {
             ImGui::EndFrame();

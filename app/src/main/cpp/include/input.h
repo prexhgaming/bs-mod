@@ -10,6 +10,7 @@
 #include <android/input.h>
 
 #include "hpp/imgui/persistence.h"
+#include "hpp/imgui/ctx_guard.h"
 
 bool g_DraggingFromOutsideImGui = false;
 int g_ActivePointerIndex = -1;
@@ -66,7 +67,14 @@ float _AMotionEvent_getY(AInputEvent* motion_event, size_t pointer_index) {
 DEFINES(void, InitializeMotionEvent, AInputEvent* event, const void* msg) {
     _InitializeMotionEvent(event, msg);
     if (!event) return;
-    
+
+    // Runs on the game's input thread and fires on EVERY motion event, including
+    // before the first eglSwapBuffers created a context and after
+    // AImGui::UnInitEnvironment() destroyed one. The ImGui Android backend calls
+    // ImGui::GetIO(), which dereferences the (null) global context in release
+    // builds -- that is the tap-to-crash. Forward only when a live context exists.
+    if (!nx::imguiInputSafe()) return;
+
     ImGui_ImplAndroid_HandleInputEvent(event, {0.0f, 0.0f});
 }
 

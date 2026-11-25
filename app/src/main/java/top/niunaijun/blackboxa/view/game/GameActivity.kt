@@ -1,15 +1,19 @@
 package top.niunaijun.blackboxa.view.game
 
+import android.Manifest
 import android.animation.Animator
 import android.animation.AnimatorListenerAdapter
 import android.animation.ObjectAnimator
 import android.animation.ValueAnimator
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.content.res.ColorStateList
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
+import android.util.Log
 import android.view.MotionEvent
 import android.view.View
 import android.view.animation.AccelerateDecelerateInterpolator
@@ -79,6 +83,19 @@ class GameActivity : AppCompatActivity() {
             }
         }
 
+    /** Result of the runtime permission prompt; silent either way, no nagging. */
+    private val permissionLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
+            val denied = result.filterValues { granted -> !granted }.keys
+            if (denied.isEmpty()) {
+                Log.i(TAG, "Game permissions granted")
+            } else {
+                // Not fatal: the game still runs, it just loses the mic (or
+                // notifications). Never block the launcher over this.
+                Log.w(TAG, "Game permissions denied: $denied")
+            }
+        }
+
     /** Loops the highlight sweep across the CTA while the screen is alive. */
     private val shineTick = object : Runnable {
         override fun run() {
@@ -124,12 +141,42 @@ class GameActivity : AppCompatActivity() {
         bindBrandCopy()
         setupActions()
         observe()
+        requestGamePermissions()
 
         loadHeroArtwork()
 
         if (savedInstanceState == null) {
             viewModel.provision()
         }
+    }
+
+    /**
+     * The sandboxed game is cloned into this app's process under this app's uid, so
+     * it inherits these permissions and the OS checks them against the *host* app:
+     * a permission the launcher lacks is a permission the game does not have.
+     *
+     * RECORD_AUDIO is dangerous and is declared in the manifest (also contributed
+     * by :Bcore) yet nothing ever prompted for it, which left the in-game voice
+     * chat silently dead. POST_NOTIFICATIONS only exists from Android 13 (API 33).
+     * Normal permissions such as MODIFY_AUDIO_SETTINGS are auto-granted and need
+     * no prompt.
+     */
+    private fun requestGamePermissions() {
+        val wanted = buildList {
+            add(Manifest.permission.RECORD_AUDIO)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                add(Manifest.permission.POST_NOTIFICATIONS)
+            }
+        }
+        val missing = wanted.filter { permission ->
+            ContextCompat.checkSelfPermission(this, permission) != PackageManager.PERMISSION_GRANTED
+        }
+        if (missing.isEmpty()) {
+            return
+        }
+        // If the user denied these before and the OS will not ask again, this
+        // returns immediately without showing anything.
+        permissionLauncher.launch(missing.toTypedArray())
     }
 
     override fun onResume() {
@@ -521,6 +568,8 @@ class GameActivity : AppCompatActivity() {
     }.getOrDefault("")
 
     companion object {
+        private const val TAG = "GameActivity"
+
         /** The artwork shipped in the project's assets folder. */
         private const val WALLPAPER_ASSET = "1795549016113.jpg"
 

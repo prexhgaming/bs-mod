@@ -6,6 +6,19 @@
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"
         tools:ignore="QueryAllPackagesPermission" />
 
+    <!-- The cloned game runs inside THIS app's process and uid, so Android applies
+         this app's permissions, not the game's. Declared here explicitly even
+         though :Bcore also contributes RECORD_AUDIO — a silent dependency on a
+         vendored module is exactly how the mic breaks without anyone noticing.
+         RECORD_AUDIO is dangerous, so it must also be requested at runtime
+         (GameActivity.requestGamePermissions); declaring it alone grants nothing. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+
+    <!-- Android 13+ gates game notifications behind an explicit grant. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!-- MODIFY_AUDIO_SETTINGS arrives from :Bcore (normal permission, auto-granted). -->
+
     <!-- No storage permission is needed: the in-game menu keeps its config in
          /data/data/<game-pkg>/imgui (internal storage of the cloned game) and
          hooks the game's own sockets, which already hold INTERNET. -->

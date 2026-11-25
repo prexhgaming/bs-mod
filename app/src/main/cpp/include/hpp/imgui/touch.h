@@ -4,6 +4,7 @@
 #include "../../includes.h"
 
 #include "persistence.h"
+#include "ctx_guard.h"
 
 struct ImGuiWindowTracker {
     ImVec2 Position;
@@ -17,6 +18,9 @@ int g_NumTrackedWindows = 0;
 
 void TrackImGuiWindow(const char* name) {
     if (!_features["bBetterTouch"]) return;
+    // ImGui::GetWindowPos()/GetWindowSize() need a live context; a teardown can
+    // land between frames, so never record into a destroyed context.
+    if (!nx::imguiContextAlive()) return;
 
     if (g_NumTrackedWindows < MAX_TRACKED_WINDOWS) {
         ImGuiWindowTracker& window = g_TrackedWindows[g_NumTrackedWindows++];
@@ -37,6 +41,10 @@ void ClearImGuiWindowTracking() {
 
 bool IsImGuiTouchPoint(float x, float y) {
     if (!_features["bBetterTouch"]) return false;
+    // Called from the input thread via _AMotionEvent_getX/Y. No live context
+    // means no menu on screen, so let the touch reach the game instead of
+    // trusting window rectangles cached from a previous frame.
+    if (!nx::imguiInputSafe()) return false;
 
     if (g_NumTrackedWindows == 0) return false;
     
