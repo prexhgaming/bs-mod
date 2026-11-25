@@ -39,3 +39,7 @@ split_config.*.apk
 
 # Uploaded reference source archives (read for ideas, not built)
 *.zip
+
+# Reference dumps from other tools (huge, read-only material)
+levi_sdk_dump.txt
+uploads/

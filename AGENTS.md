@@ -32,6 +32,31 @@
 - Python is found by scanning **every** `.so` in `libDir` in 8 MB chunks for the `Py_GetVersion` banner (`3.x.y (`) — do **not** cap the scan (`libGame.so` is ~84 MB and the scanner is prefix-anchored, so a cap silently misses it).
 - Uploaded game splits (`split_config.*.apk`, `Resources.mpk`) are gitignored — reference material, not project source.
 
+### `libGame.so` static analysis — settled, do not re-litigate
+Analysed `uploads/libGame.so` (ELF32 ARM, 84 MB, `.text` @ `0x00fa7ac0` size `0x31d6c64`):
+- **No CPython API is exported.** The only `Py*` name in the whole `.dynstr` is `PyInit__testinternalcapi` (raw-verified). `dlsym`/`xdl_sym` can never find `PyRun_StringFlags`; no symbol-table parsing helps.
+- CPython **3.11.2**; `.PyRuntime` exists at fixed vaddr `0x05027748` (size 83248) and is a real anchor, but contains no code pointers into `.text`.
+- **Static address resolution is not viable.** Of 663 `movw`/`movt` pairs in a 256 KB `.text` window, **655 (99%) materialise values that point at no section at all** — they are opaque constants. Only 4 resolve into `.text`. So pattern/offset scanning for `PyRun_StringFlags` is a dead end.
+- The mod-menu offset `libGame + 0x44ee9f4` is from an **arm64 build of a different version** (that build is 113.4 MB); in this arm32 binary it lands in `.data.rel.ro`, not code. Do not reuse it.
+- `levi_sdk_dump.txt` (gitignored, 245 MB) is another tool's **Python-level** dump from a 64-bit device — useful as an output-format reference only; it contains **no addresses** (`grep -c PyRun` → 0).
+- **Preferred route: dump statically from `Resources.mpk`** (zstd tar) — the game's `.py` tree is the SDK. Avoids the whole runtime-injection problem.
+- Tooling gotcha: capstone needs `md.detail = True` for `operands`, and `ins.operands[0].reg` is an **internal enum**, not the ARM register number — resolve it via `ins.reg_name()`. Also `md.skipdata = True` is mandatory or the disassembly silently stops at the first data byte.
+
+### Runtime carver (`py_runtime_dump.cpp`)
+- `app/src/main/cpp/py_runtime_dump.cpp` (`pydump::Run()`) is called from `RunDump` right after `WalkPython`, and writes `<out>/runtime/{pyc,src}/` plus `runtime/index.json`. It reads `/proc/self/mem` (read-only, no hooks, nothing executed) and carves **`.pyc`** blobs by locating a valid pyc magic and walking the marshalled code object to get the exact size, plus embedded `.py` sources.
+- Sizing the `.pyc` exactly is the whole point: a wrong-length `.pyc` will not load, so the walker must be byte-accurate. Verified end-to-end: a carved `.pyc` is byte-identical to the original and `marshal.loads()`-able.
+- Marshal format facts that took a source read to settle (CPython 3.11.2 = 3.12.0 here): **`W_TYPE` ORs in `FLAG_REF` 0x80**, so the type byte must be masked or nothing matches. `TYPE_REF` (`r`) carries a **4-byte** `w_long` index, not one byte.
+- A code object is **16 fields**: 5 raw `w_long` values with *no type byte*, then objects at 5..12, `co_filename` at **index 10**, `co_name` at **11**, `co_qualname` at 12, a **raw `w_long` `co_firstlineno` at index 13**, then 14/15. Treating the leading longs as marshalled objects desyncs immediately.
+- `co_filename` is usually a **`TYPE_REF`** (nested code objects emit the same string first), so the ref table must be rebuilt while walking or the output file falls back to an address-based name. One slot per `FLAG_REF` object, reserved *before* recursing (parent is appended before its children).
+- Only capture name/filename when `depth == 0` — nested code objects carry the same `co_filename` but their own `co_name`, and they are walked first.
+- Sets are `'<'`/`'>'` (`TYPE_SET`/`TYPE_FROZENSET`), **not** `' '`. Dicts are NULL-terminated (key, then value, loop until `TYPE_NULL`) with **no** leading NULL. `TYPE_LONG` is `4 + 2*abs(n)` bytes (15-bit digits in `int16` pairs).
+- Output `.pyc` paths mirror the game's package tree, so **parent directories must be created** before writing, or every nested module silently fails.
+- Source carving is heuristic: trigger only where a **run of source bytes starts** (previous byte is not source), then carve to the first non-source byte. Firing on every source-looking line yields hundreds of overlapping fragments, and a blank-line "end" heuristic runs past the real end into adjacent memory. Dedup carved source by content hash (the same module is resident in several mappings).
+- The `.pyc` route is the reliable one — every imported module has one in memory. Prefer it over source carving.
+- **`/proc/self/mem` fails per page, not per region**, and `/proc/self/maps` reports *merged* VMAs — so a listed region can contain pages `pread()` refuses with `EIO`. An all-or-nothing window read silently discarded windows that were ~99% readable; the symptom is a scan reporting **0 pyc / 0 source with no error**. `Mem::ReadWindow()` zero-fills unreadable pages and continues (a zero can never start a magic match or a source line). Keep the strict `Read()` only for small bounded reads (headers, strings).
+- Debugging tip: reproduce carver symptoms with a standalone `mmap`-a-fixture probe before touching the carver — the failing address math is usually in the region/window layer, not the marshal walker.
+- Test rig (gitignored `tmp/`): `tmp/test_marshal.py` + `tmp/bisect.py` exercise the skip logic per construct across marshal v2/v3/v4, and `tmp/test_pydump.cpp` runs the **real** `pydump::Run` against a memory-resident fixture and checks the carved bytes.
+
 ## Native third-party (`app/src/main/cpp/third_party`)
 Vendored from the LGL mod-menu archive, trimmed to what actually builds:
 - `xdl/` — MIT, hexhacking xDL. Enhanced `dlopen`/`dlsym`/`dl_iterate_phdr`; used by `native_utils.cpp` to resolve module bases and symbols.

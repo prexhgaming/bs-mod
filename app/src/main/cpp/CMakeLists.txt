@@ -59,12 +59,15 @@ add_library(
     bs_dumper
     SHARED
     sdk_dumper.cpp
-    native_utils.cpp
+    py_runtime_dump.cpp
+    ${THIRD_PARTY}/common/utils.cpp
 )
 
 find_library(log-lib log)
 
-target_include_directories(bs_dumper PRIVATE ${THIRD_PARTY})
+# utils.hpp lives in third_party/common/, so that directory must be on the
+# include path (sdk_dumper.cpp does `#include "utils.hpp"`).
+target_include_directories(bs_dumper PRIVATE ${THIRD_PARTY} ${THIRD_PARTY}/common)
 
 target_link_libraries(
     bs_dumper

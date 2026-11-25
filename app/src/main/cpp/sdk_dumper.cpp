@@ -37,7 +37,8 @@
 #include <thread>
 #include <vector>
 
-#include "native_utils.hpp"
+#include "py_runtime_dump.hpp"
+#include "utils.hpp"
 
 #define TAG "BsSdkDumper"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, TAG, __VA_ARGS__)
@@ -734,6 +735,20 @@ void RunDump() {
     if (!d.dataDir.empty()) {
         MakeDirs(Join(outDir, "python"));
         WalkPython(d.dataDir, outDir, 0, &st);
+    }
+
+    // Carve the live interpreter's own data: .pyc code objects and embedded
+    // .py source that never exist as files on disk (the game ships its
+    // scripts inside Resources.mpk, a zstd-compressed tar).
+    {
+        pydump::Options opt;
+        opt.gamePkg = d.gamePkg;
+        opt.pythonVersion = py.version;
+        opt.outDir = outDir;
+        opt.log = [](const std::string& line) { Logf("%s", line.c_str()); };
+        const pydump::Result pr = pydump::Run(opt);
+        Logf("runtime: %d pyc, %d source, %d failed", pr.pyc, pr.src,
+             pr.failed);
     }
 
     const std::string mapsPath = Join(outDir, "maps.txt");
