@@ -25,7 +25,8 @@ include $(BUILD_SHARED_LIBRARY)
 # ============================================================
 include $(CLEAR_VARS)
 
-LOCAL_MODULE := zeus_debug_dex
+# Output name: libzyn-bs.so (matches System.loadLibrary("zyn-bs")).
+LOCAL_MODULE := zyn-bs
 
 LOCAL_CFLAGS := -w -s -Wno-error=format-security -fvisibility=hidden -fpermissive -fexceptions
 LOCAL_CPPFLAGS := -w -s -Wno-error=format-security -fvisibility=hidden -std=c++17 -fpermissive -Wall -fexceptions

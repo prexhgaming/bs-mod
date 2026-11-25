@@ -1,5 +1,12 @@
 APP_ABI       := arm64-v8a armeabi-v7a
 APP_STL       := c++_static
+
+# Only the mod menu is built. The `injector` module defined in Android.mk is
+# deliberately left out: upstream it is a separate ptrace-injector app (its JNI
+# entry points are Java_com_nexora_InjectorActivity_*), and this sandbox does
+# its own injecting. libdobby is the prebuilt static dependency, listed so it is
+# built as well.
+APP_MODULES   := zyn-bs libdobby
 APP_OPTIM     := release
 APP_THIN_ARCHIVE := true
 APP_PIE       := true

@@ -70,17 +70,14 @@ android {
         viewBinding true
     }
 
-    // CMake module: the in-game mod menu -> libzyn-bs.so (app/src/main/cpp).
+    // ndk-build module: the in-game mod menu -> libzyn-bs.so (app/src/main/cpp).
+    // Android.mk/Application.mk are the single build description (the archive's
+    // own), so STL, ABI, API level and the 16 KB page flag all live there.
     // Mapped ONLY inside the game's own process — BlackBoxLoader's guest
     // lifecycle hook calls ZynBs.load(); the host process never loads it.
     externalNativeBuild {
-        cmake {
-            path "src/main/cpp/CMakeLists.txt"
-            // c++_static mirrors the archive's APP_STL; flexible page sizes make
-            // the NDK emit 16 KB-aligned segments for Android 15/16 devices
-            // (needs NDK r26+; this project pins 29).
-            arguments "-DANDROID_STL=c++_static",
-                    "-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON"
+        ndkBuild {
+            path "src/main/cpp/Android.mk"
         }
     }
     
