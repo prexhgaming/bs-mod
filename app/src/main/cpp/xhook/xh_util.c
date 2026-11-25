@@ -37,8 +37,16 @@
 #include "xh_errno.h"
 #include "xh_log.h"
 
-#define PAGE_START(addr) ((addr) & PAGE_MASK)
-#define PAGE_END(addr)   (PAGE_START(addr + sizeof(uintptr_t) - 1) + PAGE_SIZE)
+// Vendored xhook predates 16 KB page devices: it expected libc's PAGE_SIZE /
+// PAGE_MASK macros, which are 4096 (and therefore wrong on those devices). This
+// project builds with -D__BIONIC_NO_PAGE_SIZE_MACRO deliberately, so hardcoded
+// page math fails at compile time instead of silently mis-aligning mprotect() at
+// runtime. Use the runtime page size, like KittyMemory's _SYS_PAGE_SIZE_ and
+// includes.h's _PAGE_SIZE already do.
+#define XH_PAGE_SIZE ((uintptr_t)sysconf(_SC_PAGE_SIZE))
+#define XH_PAGE_MASK (~(XH_PAGE_SIZE - 1))
+#define PAGE_START(addr) ((uintptr_t)(addr) & XH_PAGE_MASK)
+#define PAGE_END(addr)   (PAGE_START((uintptr_t)(addr) + sizeof(uintptr_t) - 1) + XH_PAGE_SIZE)
 #define PAGE_COVER(addr) (PAGE_END(addr) - PAGE_START(addr))
 
 int xh_util_get_mem_protect(uintptr_t addr, size_t len, const char *pathname, unsigned int *prot)
