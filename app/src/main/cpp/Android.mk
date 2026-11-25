@@ -36,7 +36,10 @@ LOCAL_CFLAGS += -fstack-protector-strong -O3 -fdata-sections -ffunction-sections
 LOCAL_CFLAGS += -fvisibility-inlines-hidden -fno-omit-frame-pointer
 
 LOCAL_LDFLAGS += -Wl,--gc-sections,--strip-all,-llog
-LOCAL_LDLIBS := -llog -landroid -lEGL -lGLESv3 -lz -ldl -latomic
+# No -latomic: the NDK dropped libatomic in r23 (r23+ / this project's r29 would
+# fail at link pointing at a library that no longer ships). Atomics resolve
+# through libc++ / compiler-rt, and only lock-free bool atomics are used here.
+LOCAL_LDLIBS := -llog -landroid -lEGL -lGLESv3 -lz -ldl
 
 # 32-bit only: build our own code in ARM mode (arm64 has no such mode).
 ifeq ($(TARGET_ARCH_ABI),armeabi-v7a)
