@@ -1,0 +1,51 @@
+class CharCtrlComponent {
+  uintptr_t AngularSpeed; // Offset: 0x2E4
+  uintptr_t AutoUpdate; // Offset: 0x330
+  uintptr_t CanRideOnCharCtrl; // Offset: 0x2B4
+  uintptr_t CharOverlapBufferInnerOffset; // Offset: 0x2EC
+  uintptr_t CharOverlapBufferOffset; // Offset: 0x2F0
+  uintptr_t ContactOffset; // Offset: 0x2B0
+  uintptr_t CtrlEntY; // Offset: 0x2FF
+  uintptr_t DisableSlide; // Offset: 0x33C
+  uintptr_t DynamicCDRadius; // Offset: 0x30C
+  uintptr_t Enable; // Offset: 0x2FC
+  uintptr_t EnableDynamicCollision; // Offset: 0x308
+  uintptr_t EnableFallDetecting; // Offset: 0x2FE
+  uintptr_t EnableRideVelocity; // Offset: 0x6D46046000 // Global: 0x15CB17C
+  uintptr_t EnableShapeUpFitting; // Offset: 0x301
+  uintptr_t EnableStepUpSearch; // Offset: 0x33D
+  uintptr_t EnableStickToGround; // Offset: 0x300
+  uintptr_t ForcePassiveMode; // Offset: 0x328
+  uintptr_t Gravity; // Offset: 0x278
+  uintptr_t GravityScale; // Offset: 0x3C8
+  uintptr_t InterpolatePose; // Offset: 0x332
+  uintptr_t IsInTeleporting; // Offset: 0x3A5
+  uintptr_t IsSupported; // Offset: 0x3DC
+  uintptr_t LastRealVel; // Offset: 0x2D4
+  uintptr_t LinearVel; // Offset: 0x2B8
+  uintptr_t MaxAllowedDiff; // Offset: 0x32C
+  uintptr_t MaxAngularSpeed; // Offset: 0x2E8
+  uintptr_t MaxDroppingVel; // Offset: 0x304
+  uintptr_t MaxMotionAdvance; // Offset: 0x3D8
+  uintptr_t MaxPitch; // Offset: 0x314
+  uintptr_t MaxRoll; // Offset: 0x318
+  uintptr_t MaxShapeUpAng; // Offset: 0x2A8
+  uintptr_t MaxSlope; // Offset: 0x2A4
+  uintptr_t MotionScale; // Offset: 0x2F4
+  uintptr_t Navigator; // Offset: 0x3E0
+  uintptr_t NeedPosReady; // Offset: 0x331
+  uintptr_t NewCollisionResponse; // Offset: 0x333
+  uintptr_t NewCollisionResponseFactor; // Offset: 0x334
+  uintptr_t Pos; // Offset: 0x284
+  uintptr_t PushStrength; // Offset: 0x290
+  uintptr_t PushUpRatio; // Offset: 0x294
+  uintptr_t RealVel; // Offset: 0x2C4
+  uintptr_t RideVelocity; // Offset: 0x6D46046000 // Global: 0x15CB17C
+  uintptr_t ShapeUpFittingByGroundNormalApproximate; // Offset: 0x310
+  uintptr_t SimLevel; // Offset: 0x2FD
+  uintptr_t SlideCDTime; // Offset: 0x338
+  uintptr_t StepOffset; // Offset: 0x2AC
+  uintptr_t SupportedDelta; // Offset: 0x2F8
+  uintptr_t Up; // Offset: 0x298
+  uintptr_t Yaw; // Offset: 0x2E0
+};

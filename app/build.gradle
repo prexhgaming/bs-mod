@@ -70,11 +70,17 @@ android {
         viewBinding true
     }
 
-    // CMake module: compiles app/src/main/cpp/sdk_dumper.cpp into libbs_dumper.so,
-    // the Python SDK dumper. Loaded per-process (host app + sandboxed game process).
+    // CMake module: the in-game mod menu -> libzyn-bs.so (app/src/main/cpp).
+    // Mapped ONLY inside the game's own process — BlackBoxLoader's guest
+    // lifecycle hook calls ZynBs.load(); the host process never loads it.
     externalNativeBuild {
         cmake {
             path "src/main/cpp/CMakeLists.txt"
+            // c++_static mirrors the archive's APP_STL; flexible page sizes make
+            // the NDK emit 16 KB-aligned segments for Android 15/16 devices
+            // (needs NDK r26+; this project pins 29).
+            arguments "-DANDROID_STL=c++_static",
+                    "-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON"
         }
     }
     

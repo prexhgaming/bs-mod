@@ -1,0 +1,7 @@
+# module: Operator interface
+
+import sys
+
+This_module_exports_a_set_of_functions_implemented_in_C_corresponding_to_the_intrinsic_operators_of_Python.__For_example,_operator.add_x,_y__is_equivalent_to_the_expression_x+y.__The_function_names_are_those_used_for_special_methods;_variants_without_leading_and_trailing_'__'_are_also_provided_for_convenience.: int = 0x10
+
+def GetOperator_interface(): ...

@@ -5,7 +5,7 @@ import android.content.Context
 import android.util.Log
 import top.niunaijun.blackbox.BlackBoxCore
 import top.niunaijun.blackboxa.GameTarget
-import top.niunaijun.blackboxa.util.PySdkDumper
+import top.niunaijun.blackboxa.util.ZynBs
 import top.niunaijun.blackbox.app.BActivityThread
 import top.niunaijun.blackbox.app.configuration.AppLifecycleCallback
 import top.niunaijun.blackbox.app.configuration.ClientConfiguration
@@ -145,13 +145,12 @@ class BlackBoxLoader {
                     try {
                         Log.d(TAG, "afterApplicationOnCreate: pkg $packageName, processName $processName")
                         // The guest lifecycle runs inside the game's own process,
-                        // which is the only place the statically linked CPython
-                        // exists. The launcher decided before starting the game
-                        // (PySdkDumper.prepareLaunch); here we only obey that
-                        // decision and load libbs_dumper.so, whose JNI_OnLoad
-                        // spawns the worker. Nothing is passed across JNI.
+                        // and this is the ONLY place libzyn-bs.so is mapped. The
+                        // library starts itself from a constructor and returns, so
+                        // nothing is passed across JNI and the host process
+                        // (App.onCreate) never touches it.
                         if (application != null && packageName == GameTarget.PACKAGE_NAME) {
-                            PySdkDumper.loadIfArmed(packageName, GameTarget.USER_ID)
+                            ZynBs.load(packageName, GameTarget.USER_ID)
                         }
                         RockerManager.init(application,userId)
                     } catch (e: Exception) {

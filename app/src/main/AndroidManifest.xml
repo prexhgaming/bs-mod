@@ -6,10 +6,9 @@
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"
         tools:ignore="QueryAllPackagesPermission" />
 
-    <!-- No storage permission is needed: the Python SDK dumper writes into the
-         game's own app-specific external dir,
-         /storage/emulated/0/Android/data/<game-pkg>/sdk, which is always
-         writable by the sandbox process. -->
+    <!-- No storage permission is needed: the in-game menu keeps its config in
+         /data/data/<game-pkg>/imgui (internal storage of the cloned game) and
+         hooks the game's own sockets, which already hold INTERNET. -->
 
     <application
         android:name=".app.App"

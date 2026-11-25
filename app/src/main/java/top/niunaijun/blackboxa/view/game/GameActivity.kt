@@ -35,7 +35,6 @@ import top.niunaijun.blackboxa.data.GameRepository
 import top.niunaijun.blackboxa.data.SandboxStatus
 import top.niunaijun.blackboxa.databinding.ActivityGameBinding
 import top.niunaijun.blackboxa.util.InjectionUtil
-import top.niunaijun.blackboxa.util.PySdkDumper
 import top.niunaijun.blackboxa.util.inflate
 import top.niunaijun.blackboxa.util.toast
 import kotlin.math.abs
@@ -205,8 +204,6 @@ class GameActivity : AppCompatActivity() {
     private fun showOverflow() {
         val popup = PopupMenu(this, binding.moreButton)
         popup.menuInflater.inflate(R.menu.menu_launcher, popup.menu)
-        // Reflect the persisted dumper toggle before the popup is shown.
-        popup.menu.findItem(R.id.action_dump_sdk)?.isChecked = PySdkDumper.isEnabled(this)
         popup.setOnMenuItemClickListener { item ->
             when (item.itemId) {
                 R.id.action_refresh -> {
@@ -221,18 +218,6 @@ class GameActivity : AppCompatActivity() {
 
                 R.id.action_select_apk -> {
                     pickApk.launch(arrayOf("*/*"))
-                    true
-                }
-
-                R.id.action_dump_sdk -> {
-                    val enabled = !item.isChecked
-                    item.isChecked = enabled
-                    PySdkDumper.setEnabled(this, enabled)
-                    // No permission is needed: the dump lands in the game's own
-                    // app-specific external dir (Android/data/<pkg>/sdk). The
-                    // toggle is read when the game is started, so it takes effect
-                    // on the next launch.
-                    toast(if (enabled) R.string.sdk_dump_enabled else R.string.sdk_dump_disabled)
                     true
                 }
 

@@ -1,0 +1,34 @@
+class WaterWaveComponent {
+  uintptr_t ChunkRes; // Offset: 0x6E8
+  uintptr_t Collected; // Offset: 0x75C
+  uintptr_t CullingBound; // Offset: 0x718
+  uintptr_t CullingFlags; // Offset: 0x700
+  uintptr_t DisplaceRange; // Offset: 0x774
+  uintptr_t EnableSSR; // Offset: 0x6FC
+  uintptr_t FocusPosition; // Offset: 0x768
+  uintptr_t FrameIndex; // Offset: 0x764
+  uintptr_t FrameTime; // Offset: 0x760
+  uintptr_t GridRes; // Offset: 0x6F4
+  uintptr_t HeightRange; // Offset: 0x784
+  uintptr_t IsFoamAlphaReady; // Offset: 0x759
+  uintptr_t IsFoamNormalReady; // Offset: 0x75A
+  uintptr_t IsMaterialReady; // Offset: 0x751
+  uintptr_t IsShorelineReady; // Offset: 0x75B
+  uintptr_t IsTextureReady; // Offset: 0x758
+  uintptr_t IsWaterWaveResourceReady; // Offset: 0x750
+  uintptr_t LodRangeScale; // Offset: 0x6F8
+  uintptr_t MaterialGuid; // Offset: 0x7A8
+  uintptr_t NeedUpdateMesh; // Offset: 0x730
+  uintptr_t NoFarPlaneClip; // Offset: 0x6E4
+  uintptr_t RequiredTerrains; // Offset: 0x790
+  uintptr_t SectorRes; // Offset: 0x6EC
+  uintptr_t ShorelineBoundInfo; // Offset: 0x7D8
+  uintptr_t ShorelineGuid; // Offset: 0x7C8
+  uintptr_t ShorelineRangeInfo; // Offset: 0x7E8
+  uintptr_t ShorelineWaveFoamGuid; // Offset: 0x7F8
+  uintptr_t ShorelineWaveNoiseGuid; // Offset: 0x808
+  uintptr_t Size; // Offset: 0x6F0
+  uintptr_t TexturesReadyCount; // Offset: 0x754
+  uintptr_t Viewpoints; // Offset: 0x738
+  uintptr_t WaterWaveGuid; // Offset: 0x7B8
+};

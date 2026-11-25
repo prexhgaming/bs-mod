@@ -1,0 +1,29 @@
+class FollowPlacer {
+  uintptr_t AngularSpeed; // Offset: 0x138
+  uintptr_t BoneName; // Offset: 0xC0
+  uintptr_t Direction; // Offset: 0x168
+  uintptr_t EnableFaceCheck; // Offset: 0xE0
+  uintptr_t EnableInertia; // Offset: 0x128
+  uintptr_t EnableRotate; // Offset: 0x130
+  uintptr_t EnableUpPos; // Offset: 0xF0
+  uintptr_t EnableZoomSmooth; // Offset: 0x1B0
+  uintptr_t FaceThreshold; // Offset: 0xE4
+  uintptr_t FocusDiffTol; // Offset: 0x12C
+  uintptr_t FocusPos; // Offset: 0x118
+  uintptr_t Fov; // Offset: 0x154
+  uintptr_t InertiaCoeff; // Offset: 0x124
+  uintptr_t Mover; // Offset: 0xE8
+  uintptr_t PitchMax; // Offset: 0x108
+  uintptr_t PitchMin; // Offset: 0x104
+  uintptr_t PrevTargetPos; // Offset: 0x13C
+  uintptr_t Roll; // Offset: 0x158
+  uintptr_t Target; // Offset: 0x178
+  uintptr_t TargetDiffTol; // Offset: 0x134
+  uintptr_t TargetPos; // Offset: 0x148
+  uintptr_t TargetPosOffset; // Offset: 0x15C
+  uintptr_t TargetTransform; // Offset: 0x180
+  uintptr_t UseBonePosition; // Offset: 0xB8
+  uintptr_t ZoomHalfLife; // Offset: 0xF8
+  uintptr_t ZoomMax; // Offset: 0x100
+  uintptr_t ZoomMin; // Offset: 0xFC
+};

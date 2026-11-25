@@ -1,0 +1,53 @@
+class VehicleComponent {
+  uintptr_t Accel; // Offset: 0x510
+  uintptr_t BalanceState; // Offset: 0x238
+  uintptr_t Brake; // Offset: 0x511
+  uintptr_t BrakeSound; // Offset: 0x3A8
+  uintptr_t BrakeSoundVolume; // Offset: 0x3F8
+  uintptr_t BrakeThreshold; // Offset: 0x3DC
+  uintptr_t CollisionFilterInfo; // Offset: 0x6D46046000 // Global: 0x15CB17C
+  uintptr_t EnableInterpolatePose; // Offset: 0x51F
+  uintptr_t EnableUpdateSkeleton; // Offset: 0x516
+  uintptr_t EnableVehicleEngine; // Offset: 0x6D46046000 // Global: 0x15CB17C
+  uintptr_t EngineRunSound; // Offset: 0x360
+  uintptr_t EngineRunSoundVolume; // Offset: 0x3EC
+  uintptr_t EngineSoundRPMRatio; // Offset: 0x3CC
+  uintptr_t EngineSpeedMin; // Offset: 0x3C8
+  uintptr_t EngineSpeedThreshold; // Offset: 0x3C4
+  uintptr_t EngineStartSound; // Offset: 0x348
+  uintptr_t EngineStartSoundVolume; // Offset: 0x3E8
+  uintptr_t ForwardSpeed; // Offset: 0x3E4
+  uintptr_t ForwardSpeedThreshold; // Offset: 0x3C0
+  uintptr_t Handbrake; // Offset: 0x512
+  uintptr_t HoldSoundEvent; // Offset: 0x51E
+  uintptr_t InAirControllParams; // Offset: 0x248
+  uintptr_t InAirControllState; // Offset: 0x26C
+  uintptr_t IsContacted; // Offset: 0x51B
+  uintptr_t OAParams; // Offset: 0x298
+  uintptr_t OAState; // Offset: 0x2D4
+  uintptr_t PadAccel; // Offset: 0x500
+  uintptr_t PadBrake; // Offset: 0x504
+  uintptr_t PadHandbrake; // Offset: 0x508
+  uintptr_t PadSteer; // Offset: 0x50C
+  uintptr_t RPMMax; // Offset: 0x3E0
+  uintptr_t RearRightWheelOffset; // Offset: 0x3FC
+  uintptr_t SteadyParams; // Offset: 0x280
+  uintptr_t SteerLeft; // Offset: 0x513
+  uintptr_t SteerRight; // Offset: 0x514
+  uintptr_t SystemDataContainer; // Offset: 0x4D8
+  uintptr_t UseKeyboard; // Offset: 0x515
+  uintptr_t VehicleExhaust; // Offset: 0x330
+  uintptr_t VehicleExhaustParticle; // Offset: 0x438
+  uintptr_t VehicleState; // Offset: 0x1E0
+  uintptr_t WheelDust; // Offset: 0x300
+  uintptr_t WheelDustParticle; // Offset: 0x428
+  uintptr_t WheelSlideSound; // Offset: 0x378
+  uintptr_t WheelSlideSoundVolume; // Offset: 0x3F0
+  uintptr_t WheelSlipRatioThreshold; // Offset: 0x3D0
+  uintptr_t WheelSuspensionCompressedThreshold; // Offset: 0x3D8
+  uintptr_t WheelSuspensionElongatedThreshold; // Offset: 0x3D4
+  uintptr_t WheelSuspensionSound; // Offset: 0x390
+  uintptr_t WheelSuspensionSoundVolume; // Offset: 0x3F4
+  uintptr_t WheelTrail; // Offset: 0x318
+  uintptr_t WheelTrailParticle; // Offset: 0x430
+};

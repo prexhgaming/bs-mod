@@ -1,0 +1,35 @@
+class ClothMeshConfigData {
+  uintptr_t AirDensityScale; // Offset: 0x68
+  uintptr_t AirDragCoefficient; // Offset: 0x60
+  uintptr_t AirLiftCoefficient; // Offset: 0x64
+  uintptr_t AirMeshVolumeScale; // Offset: 0xE4
+  uintptr_t AngularDrag; // Offset: 0xA8
+  uintptr_t AngularInertia; // Offset: 0xC0
+  uintptr_t AnimDriveDamping; // Offset: 0x74
+  uintptr_t AnimDriveMultiplier; // Offset: 0x70
+  uintptr_t CentrifugalInertia; // Offset: 0xCC
+  uintptr_t ClothWindMethodType; // Offset: 0x7C
+  uintptr_t CollisionMassScale; // Offset: 0x8C
+  uintptr_t CollisionThickness; // Offset: 0xE8
+  uintptr_t CompressionLimit; // Offset: 0x38
+  uintptr_t CpuTangentUpdate; // Offset: 0x91
+  uintptr_t Damping; // Offset: 0x54
+  uintptr_t EnableCCD; // Offset: 0x90
+  uintptr_t Friction; // Offset: 0x88
+  uintptr_t GravityScale; // Offset: 0x80
+  uintptr_t InvMassToArea; // Offset: 0x78
+  uintptr_t LinearDrag; // Offset: 0x9C
+  uintptr_t LinearInertia; // Offset: 0xB4
+  uintptr_t MassScale; // Offset: 0x84
+  uintptr_t SelfCollisionCullScale; // Offset: 0x50
+  uintptr_t SelfCollisionStiffness; // Offset: 0x4C
+  uintptr_t SelfCollisionThickness; // Offset: 0x48
+  uintptr_t ShapeMatchingFactor; // Offset: 0xE0
+  uintptr_t SolverFreq; // Offset: 0x6C
+  uintptr_t StiffnessFreq; // Offset: 0x98
+  uintptr_t StiffnessMultiplier; // Offset: 0x18
+  uintptr_t StretchLimit; // Offset: 0x28
+  uintptr_t TetherLimit; // Offset: 0xDC
+  uintptr_t TetherStiffness; // Offset: 0xD8
+  uintptr_t VirtualParticleLevel; // Offset: 0x94
+};

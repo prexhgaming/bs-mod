@@ -13,10 +13,4 @@
         android:id="@+id/action_select_apk"
         android:title="@string/action_select_apk" />
 
-    <item
-        android:id="@+id/action_dump_sdk"
-        android:title="@string/action_dump_sdk"
-        android:checkable="true"
-        android:checked="false" />
-
 </menu>

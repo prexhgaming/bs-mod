@@ -1,0 +1,11 @@
+# module: sys
+
+import sys
+
+flags__Flags_provided_through_command_line_arguments_or_environment_vars.: int = 0x12
+float_info__A_named_tuple_holding_information_about_the_float_type._It_contains_low_level_information_about_the_precision_and_internal_representation._Please_study_your_system's__file_`float.h`_for_more_information.: int = 0xB
+int_info__A_named_tuple_that_holds_information_about_Python's_internal_representation_of_integers.__The_attributes_are_read_only.: int = 0x4
+thread_info__A_named_tuple_holding_information_about_the_thread_implementation.: int = 0x3
+version_info__Version_information_as_a_named_tuple.: int = 0x5
+
+def Getsys(): ...

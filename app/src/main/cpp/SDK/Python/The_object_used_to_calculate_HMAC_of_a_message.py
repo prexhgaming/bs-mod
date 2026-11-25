@@ -1,0 +1,7 @@
+# module: The object used to calculate HMAC of a message
+
+import sys
+
+Methods___update___--_updates_the_current_digest_with_an_additional_string_digest___--_return_the_current_digest_value_hexdigest___--_return_the_current_digest_as_a_string_of_hexadecimal_digits_copy___--_return_a_copy_of_the_current_hash_object__Attributes___name_--_the_name,_including_the_hash_algorithm_used_by_this_object_digest_size_--_number_of_bytes_in_digest___output: int = 0x10
+
+def GetThe_object_used_to_calculate_HMAC_of_a_message(): ...

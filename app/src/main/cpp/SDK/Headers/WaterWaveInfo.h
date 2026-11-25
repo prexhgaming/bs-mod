@@ -1,0 +1,30 @@
+class WaterWaveInfo {
+  uintptr_t Amplitude; // Offset: 0x24
+  uintptr_t ChoppyScale; // Offset: 0x34
+  uintptr_t DirBias; // Offset: 0x40
+  uintptr_t DirMovement; // Offset: 0x44
+  uintptr_t DisplaceRanges; // Offset: 0x98
+  uintptr_t DisplacementMaps; // Offset: 0xB0
+  uintptr_t FoamAlphaGuid; // Offset: 0x70
+  uintptr_t FoamAmount; // Offset: 0x48
+  uintptr_t FoamDissipationSpeed; // Offset: 0x50
+  uintptr_t FoamFallOffPower; // Offset: 0x58
+  uintptr_t FoamFallOffSpeed; // Offset: 0x54
+  uintptr_t FoamNormalGuid; // Offset: 0x80
+  uintptr_t FoamThreshold; // Offset: 0x4C
+  uintptr_t FrameCount; // Offset: 0x60
+  uintptr_t FrameIntervalTime; // Offset: 0x64
+  uintptr_t FrameIntervalTimeInv; // Offset: 0x68
+  uintptr_t GridSize; // Offset: 0x20
+  uintptr_t Length; // Offset: 0x1C
+  uintptr_t Noise; // Offset: 0x3C
+  uintptr_t NormalMaps; // Offset: 0xF8
+  uintptr_t PeriodCount; // Offset: 0x5C
+  uintptr_t PlayPeriod; // Offset: 0x90
+  uintptr_t SlopeRanges; // Offset: 0xE0
+  uintptr_t SmallCutOff; // Offset: 0x28
+  uintptr_t UVScale; // Offset: 0x6C
+  uintptr_t UnitPeriod; // Offset: 0x38
+  uintptr_t WindAngle; // Offset: 0x30
+  uintptr_t WindStrength; // Offset: 0x2C
+};

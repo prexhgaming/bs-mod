@@ -1,0 +1,29 @@
+class SkeletonSystemSetting {
+  uintptr_t CharacterCoord; // Offset: 0x288
+  uintptr_t Head; // Offset: 0xC0
+  uintptr_t LCalf; // Offset: 0x1E0
+  uintptr_t LClavicle; // Offset: 0xD8
+  uintptr_t LFinger0; // Offset: 0x138
+  uintptr_t LFoot; // Offset: 0x1F8
+  uintptr_t LForearm; // Offset: 0x108
+  uintptr_t LHand; // Offset: 0x120
+  uintptr_t LThigh; // Offset: 0x1C8
+  uintptr_t LToe0; // Offset: 0x210
+  uintptr_t LUpperArm; // Offset: 0xF0
+  uintptr_t Neck; // Offset: 0xA8
+  uintptr_t Pelvis; // Offset: 0x48
+  uintptr_t RCalf; // Offset: 0x240
+  uintptr_t RClavicle; // Offset: 0x150
+  uintptr_t RFinger0; // Offset: 0x1B0
+  uintptr_t RFoot; // Offset: 0x258
+  uintptr_t RForearm; // Offset: 0x180
+  uintptr_t RHand; // Offset: 0x198
+  uintptr_t RThigh; // Offset: 0x228
+  uintptr_t RToe0; // Offset: 0x270
+  uintptr_t RUpperArm; // Offset: 0x168
+  uintptr_t Root; // Offset: 0x18
+  uintptr_t RootMode; // Offset: 0x30
+  uintptr_t Spine; // Offset: 0x60
+  uintptr_t Spine1; // Offset: 0x78
+  uintptr_t Spine2; // Offset: 0x90
+};
