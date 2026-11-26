@@ -1,7 +1,0 @@
-# module: A lock object is a synchronization primitive
-
-import sys
-
-To_create_a_lock,_call_threading.Lock__.__Methods_are___acquire___--_lock_the_lock,_possibly_blocking_until_it_can_be_obtained_release___--_unlock_of_the_lock_locked___--_test_whether_the_lock_is_currently_locked__A_lock_is_not_owned_by_the_thread_that_locked_it;_another_thread_may_unlock_it.__A_thread_attempting_to_lock_a_lock_that_it_has_already_locked_will_block_until_another_thread_unlocks_it.__Deadlocks_may_ensue.: int = 0x6D48F3FAD0
-
-def GetA_lock_object_is_a_synchronization_primitive(): ...
