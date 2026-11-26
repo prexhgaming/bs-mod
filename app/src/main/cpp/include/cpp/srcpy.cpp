@@ -13,7 +13,32 @@ import json, threading, functools, time, socket, os
 # data.json is NOT config.json. config.json is the menu's own nested
 # {"bool":..,"float":..,"int":..} settings file that has to survive a restart;
 # we must never write it, and the C++ side keeps the two apart on purpose.
-DATA_PATH     = "/storage/emulated/0/Nexora/data.json"
+# The C++ side writes into GetConfigDir(), which is the *internal* app data
+# directory (ANativeActivity::internalDataPath + "/Nexora/") whenever the
+# activity is up - no storage permission needed, and unlike /storage/emulated/0
+# it is guaranteed to exist and be writable. We must look in the same place.
+# The exact path depends on how the sandbox rewrites it, so probe a few
+# candidates and keep whichever exists. Getting this wrong is not cosmetic:
+# sync_attrs stays empty, fWidth/fHeight fall back to 1080x720, and C++ then
+# rescales every bone by Height/720 - the ESP drifts far off the players and
+# wobbles as the camera pans.
+def _proc_pkg():
+    try:
+        with open('/proc/self/cmdline', 'rb') as f:
+            name = f.read().split(b'\x00')[0].decode('utf-8', 'replace')
+    except Exception:
+        return 'com.netease.newspike'
+    # A sandboxed process is often "<pkg>:<suffix>"; the data dir is per package.
+    return name.split(':')[0] or 'com.netease.newspike'
+
+_PKG = _proc_pkg()
+_DATA_CANDIDATES = [
+    '/data/data/%s/files/Nexora/data.json'   % _PKG,
+    '/data/user/0/%s/files/Nexora/data.json' % _PKG,
+    '/data/data/%s/Nexora/data.json'         % _PKG,
+    '/storage/emulated/0/Nexora/data.json',
+]
+DATA_PATH     = _DATA_CANDIDATES[0]
 UDP_RECV_PORT = 50001   # Python -> C++ (ESP entity data)
 
 _send_sock = None
@@ -55,9 +80,28 @@ _data_lock = threading.Lock()
 
 def _read_data():
     """Re-read data.json if it changed on disk. Cheap: one stat per tick."""
-    global sync_attrs, _data_mtime
+    global sync_attrs, _data_mtime, DATA_PATH
     try:
         st = os.stat(DATA_PATH)
+    except Exception:
+        # Not at the current path yet (or it moved): re-probe the candidates so
+        # we pick the file up as soon as C++ creates it.
+        for p in _DATA_CANDIDATES:
+            try:
+                os.stat(p)
+                DATA_PATH = p
+                _data_mtime = None
+                print(f"[CFG] data.json found at {p}")
+                break
+            except Exception:
+                continue
+        else:
+            return
+        try:
+            st = os.stat(DATA_PATH)
+        except Exception:
+            return
+    try:
         mtime = st.st_mtime_ns
         if mtime == _data_mtime:
             return
@@ -79,6 +123,10 @@ def _data_thread():
 # 🔥 START DATA READER
 # ============================================================
 _read_data()
+if sync_attrs:
+    print(f"[CFG] data.json = {DATA_PATH} ({len(sync_attrs)} keys)")
+else:
+    print(f"[CFG] data.json not readable yet; pkg={_PKG} candidates={_DATA_CANDIDATES}")
 threading.Thread(target=_data_thread, daemon=True).start()
 
 # ============================================================
@@ -350,7 +398,7 @@ def EspUpdate(*_, **__):
     try:
         _cam_euler = _cam.euler_angles if hasattr(_cam, 'euler_angles') else None
         _cam_yaw   = float(_cam_euler.y) if _cam_euler else 0.0
-        payload = json.dumps({
+        _payload = {
             "players": entities,
             "world_name": getattr(inst, 'world_name', 'Unknown'),
             "real_world_name": getattr(inst, 'real_world_name', ''),
@@ -358,10 +406,14 @@ def EspUpdate(*_, **__):
             "is_replaying": getattr(inst, 'is_replaying', False),
             "total_entities": len(inst.entities),
             "cam_yaw": _cam_yaw,
-            "screen_w": float(sync_attrs.get('fWidth', 1080)),
-            "screen_h": float(sync_attrs.get('fHeight', 720)),
-        }, separators=(",", ":")) + "\n"
-        _write_udp(payload)
+        }
+        # Only claim a resolution when it came from the config. Sending a guess
+        # here is what made C++ rescale bones by Height/720 and draw the ESP
+        # nowhere near the players; omitting the keys makes C++ draw 1:1.
+        if 'fWidth' in sync_attrs and 'fHeight' in sync_attrs:
+            _payload["screen_w"] = float(sync_attrs['fWidth'])
+            _payload["screen_h"] = float(sync_attrs['fHeight'])
+        _write_udp(json.dumps(_payload, separators=(",", ":")) + "\n")
     except:
         pass
 
@@ -512,8 +564,11 @@ def AIMUpdate(*_, **__):
             except: return
         if not FpsPlacerInstance:
             return
-        sw = sync_attrs.get('fWidth', 1080)
-        sh = sync_attrs.get('fHeight', 720)
+        # No guessing here: a wrong screen centre silently misplaces the whole
+        # FOV circle (cy was 360 instead of ~1200 on a 1080x2400 panel). The
+        # values come from the menu via data.json, so wait for them.
+        sw = sync_attrs.get('fWidth', 0)
+        sh = sync_attrs.get('fHeight', 0)
         if not (0 < sw <= 5000 and 0 < sh <= 5000):
             return
         cx         = sw * 0.5

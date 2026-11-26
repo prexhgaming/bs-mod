@@ -42,9 +42,9 @@ static std::atomic<int64_t>  g_last_data_ms{0};
 static constexpr int64_t     STALE_TIMEOUT_MS = 800;
 
 // Resolution the script projected with, so bones can be rescaled to the
-// overlay's real surface.
-static float g_screen_w = 1080.f;
-static float g_screen_h = 1920.f;
+// overlay surface. 0 means "unknown" - the rescale is then skipped (1:1).
+static float g_screen_w = 0.f;
+static float g_screen_h = 0.f;
 
 static bool init_udp_receiver() {
     if (g_udp_recv_initialized.load() && g_udp_recv_sock >= 0) return true;
@@ -141,8 +141,12 @@ static bool read_and_process_udp() {
 
         auto now = steady_clock::now();
 
-        g_screen_w = data.value("screen_w", 1080.f);
-        g_screen_h = data.value("screen_h", 1920.f);
+        // 0 = "the script did not tell us", which disables the rescale below.
+        // A wrong guess here is much worse than no rescale: the old 1080x1920
+        // default silently stretched every bone by Height/1920 on a 2400px
+        // screen, putting the ESP well below the players.
+        g_screen_w = data.value("screen_w", 0.f);
+        g_screen_h = data.value("screen_h", 0.f);
 
         if (!data.contains("players") || !data["players"].is_array()) {
             std::lock_guard<std::mutex> lk(entities_mutex);

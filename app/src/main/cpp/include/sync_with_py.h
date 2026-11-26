@@ -29,6 +29,7 @@
 static std::mutex _swp_mutex;
 static std::chrono::steady_clock::time_point _swp_last_sync;
 static std::string _swp_last_written;   // last JSON written, to skip no-op writes
+static std::string _swp_last_path;      // path that JSON went to
 
 static inline bool _swp_ratelimit(int ms) {
     auto now = std::chrono::steady_clock::now();
@@ -39,11 +40,21 @@ static inline bool _swp_ratelimit(int ms) {
     return true;
 }
 
+// Defined later in draw.h (which is the only includer of this header). Using
+// it here matters: it mkdir's the directory it returns, and it resolves to the
+// game's internal data dir whenever the activity is up, falling back to
+// CONFIG_DIR only otherwise. Hardcoding a path instead meant writing into a
+// directory nothing ever created, so every flush failed silently and the
+// script fell back to its own 1080x720 defaults for fWidth/fHeight - which in
+// turn made the entity parser rescale bones by Height/720 and put the ESP
+// nowhere near the player.
+static inline std::string GetConfigDir();
+
 // Same directory draw.h uses for config.json / imgui.ini, but its own file.
 static std::string _swp_data_path() {
     const char* env = getenv("NEXORA_CONFIG_DIR");
     if (env && env[0]) return std::string(env) + "data.json";
-    return "/storage/emulated/0/Nexora/data.json";
+    return GetConfigDir() + "data.json";
 }
 
 static std::string _swp_build_json() {
@@ -79,12 +90,16 @@ static std::string _swp_build_json() {
 // roughly one write per user interaction instead of 60+ per second.
 static void _swp_flush(const std::string& json) {
     std::lock_guard<std::mutex> lk(_swp_mutex);
-    if (json == _swp_last_written) return;
-    std::ofstream f(_swp_data_path(), std::ios::trunc);
+    std::string path = _swp_data_path();
+    // Skip only when both the payload and the destination are unchanged: the
+    // resolved directory can move from the CONFIG_DIR fallback to the internal
+    // data dir once the activity is up, and the new file must be written then.
+    if (json == _swp_last_written && path == _swp_last_path) return;
+    std::ofstream f(path, std::ios::trunc);
     if (!f.is_open()) return;
     f << json;
     f.close();
-    if (f.good() || !f.bad()) _swp_last_written = json;
+    if (f.good() || !f.bad()) { _swp_last_written = json; _swp_last_path = path; }
 }
 
 static inline void sync_with_py() {
@@ -133,4 +148,5 @@ static inline void sync_with_py_string(const std::string& key, const std::string
 static inline void close_sync() {
     std::lock_guard<std::mutex> lk(_swp_mutex);
     _swp_last_written.clear();
+    _swp_last_path.clear();
 }
