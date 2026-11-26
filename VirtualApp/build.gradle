@@ -1,0 +1,73 @@
+plugins {
+    alias(libs.plugins.android.library)
+}
+
+// Sandbox prefix used for the engine's content-provider authorities and the
+// permissions it declares in its manifest. It must match the host app's
+// applicationId (:app), otherwise the providers collide with the guest's.
+def VA_PACKAGE_PREFIX = 'zyn.bs'
+
+android {
+    namespace 'com.lody.virtual'
+
+    compileSdk libs.versions.compileSdk.get().toInteger()
+    ndkVersion = libs.versions.ndkVersion.get()
+
+    defaultConfig {
+        minSdk libs.versions.minSdk.get().toInteger()
+        targetSdk libs.versions.targetSdk.get().toInteger()
+
+        // BuildConfig.VERSION_CODE is no longer generated for libraries under
+        // AGP 8, so the engine's own fields are declared explicitly here and
+        // read from com.lody.virtual.Build.
+        buildConfigField 'String', 'VA_VERSION_NAME', '"V' + libs.versions.versionName.get() + '"'
+        buildConfigField 'int', 'VA_VERSION_CODE', libs.versions.versionCode.get()
+        buildConfigField 'String', 'commit', '"000000"'
+
+        manifestPlaceholders = [
+                PERMISSION_PREFIX: VA_PACKAGE_PREFIX,
+                AUTHORITY_PREFIX : VA_PACKAGE_PREFIX,
+                VA_VERSION       : libs.versions.versionCode.get(),
+        ]
+    }
+
+    buildFeatures {
+        buildConfig true
+        aidl true
+    }
+
+    buildTypes {
+        debug {
+            jniDebuggable false
+        }
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+
+    externalNativeBuild {
+        ndkBuild {
+            path file("src/main/jni/Android.mk")
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    lint {
+        // IJobService needs NewApi; the engine intentionally calls newer APIs
+        // behind runtime guards.
+        abortOnError false
+        warning 'NewApi', 'OnClick', 'EllipsizeMaxLines'
+    }
+}
+
+dependencies {
+    // Only the AndroidX pieces the engine actually imports: annotations and
+    // ActivityCompat for the vendor call-observer helpers. appcompat/support-v7
+    // were dropped in the AGP 8 port; the host app supplies the rest.
+    implementation libs.core.ktx
+}

@@ -28,6 +28,10 @@ jobs:
 
       - name: Setup Gradle (caches dependencies + wrapper)
         uses: gradle/actions/setup-gradle@v4
+        with:
+          # Pin explicitly: AGP 8.13.2 requires Gradle >= 8.13, and relying on
+          # the runner's preinstalled Gradle silently produced 8.7 failures.
+          gradle-version: '8.13'
 
       - name: Cache Gradle build state
         uses: actions/cache@v4
@@ -47,7 +51,10 @@ jobs:
         id: build
         run: |
           set -o pipefail
-          ./gradlew :app:assembleRelease 2>&1 | tee build.log
+          # Print the version actually in use so a wrapper/runner mismatch is
+          # visible in the log instead of surfacing as an opaque AGP error.
+          ./gradlew --version 2>&1 | tee build.log
+          ./gradlew :app:assembleRelease 2>&1 | tee -a build.log
 
       - name: Send build.log to Telegram on failure
         if: failure()

@@ -108,8 +108,9 @@ android {
 }
 
 dependencies {
-    // VirtualApp engine, prebuilt AAR resolved through flatDir in settings.gradle.
-    implementation(name: 'lib-release', ext: 'aar')
+    // VirtualApp engine, built from source in :VirtualApp. The prebuilt
+    // app/sdk/lib-release.aar is kept in the tree as a reference artifact only.
+    implementation project(':VirtualApp')
 
     implementation libs.appcompat
     implementation libs.material

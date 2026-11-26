@@ -2,14 +2,22 @@
 
 ## What this is
 - **BS-KILLER** — a single-game launcher built on the **VirtualApp virtual engine** (Android app cloning / sandboxing).
-- Engine: `com.lody.virtual.client.core.VirtualCore` from the **VirtualApp** engine (`github.com/ServenScorpion/VirtualApp`), pulled in as a prebuilt AAR `app/sdk/lib-release.aar`. The `:Bcore` module is no longer on the build classpath (directory retained on disk, removed from `settings.gradle`).
+- Engine: `com.lody.virtual.client.core.VirtualCore` from the **VirtualApp** engine (`github.com/ServenScorpion/VirtualApp`), **built from source** as the `:VirtualApp` module. The prebuilt `app/sdk/lib-release.aar` is kept only as a reference artifact and is *not* on the compile classpath.
+- The old `:Bcore` engine (and its `Bcore/` directory) has been deleted entirely.
 - The target game is hard-wired in `app/src/main/java/zyn/bs/GameTarget.kt` (`com.netease.newspike`, "Knives Out", sandbox user 0).
 
 ## Modules
 - `:app` — Kotlin launcher UI (`zyn.bs`). Launcher activity `.view.game.GameActivity`, `Application` `.app.App`. Also hosts the native mod menu `libzyn-bs.so`.
-- `:black-reflection` — annotation/reflection stubs (retained; not required by VirtualApp).
-- `:compiler` — annotation processor for `:black-reflection`.
+- `:VirtualApp` — the engine, vendored source (`com.lody.virtual.**` + `com.xdja.**`, 657 Java, 86 AIDL, native `src/main/jni`). `namespace com.lody.virtual`, manifest `package=` removed (AGP 8). Depends only on `androidx.core`; appcompat/support-v7 were dropped and the 16 `android.support.*` imports rewritten to AndroidX.
+- `:black-reflection` / `:compiler` — legacy Bcore reflection stubs, still built but unused by the engine.
 - Engine wiring: `App.onCreate` calls `VirtualCore.get().startup(this, SettingConfig)` and registers `AppCallback`; `AppManager`/`BlackBoxLoader`/`GameRepository` use `VirtualCore`. **No `BlackBoxCore`.**
+
+### Engine build constraints (`:VirtualApp`)
+- **ABI ownership**: `APP_ABI := armeabi-v7a` in `VirtualApp/src/main/jni/Application.mk` (NDK 29 dropped `armeabi`); the *packaging* filter stays in `:app` (`android.defaultConfig.ndk.abiFilters`). 64-bit is not a target — the game is 32-bit only.
+- `BuildConfig.VERSION_CODE` is not generated for libraries under AGP 8, so the module declares `VA_VERSION_NAME` / `VA_VERSION_CODE` / `commit` itself and `com.lody.virtual.Build` reads those.
+- `manifestPlaceholders` `PERMISSION_PREFIX` / `AUTHORITY_PREFIX` = `zyn.bs`; they must match `:app`'s `applicationId` or the engine's providers collide.
+- **Dead vendor SDK removed**: the jcenter-only `com.xdja.safekeyservice:*` artifacts (unavailable, jcenter is shut) were only used by `VSafekeyManagerService`, so that service, its client, the CKMS variant and 3 AIDLs were deleted along with its `BinderProvider` registration. `IVSCallback.aidl` is kept — `VirtualCore.VSCallback` extends its `Stub`.
+- `app/proguard-rules.pro` keeps the engine wholesale (`-keep class com.lody.virtual.**`): it resolves stub components, AIDL stubs and hook proxies by name, so renaming breaks the sandbox at runtime.
 
 ## VirtualApp integration
 - **Lifecycle**: `VirtualCore.get().setAppCallback(AppCallback)`; `AppCallback.afterApplicationCreate(packageName, processName, application)` fires in the guest process after `callApplicationOnCreate`. **libzyn-bs is mapped there** (`ZynBs.load(packageName, USER_ID)`, guarded by `catch(Throwable)`); the host process never loads it. No `AppLifecycleCallback`/`BActivityThread`.

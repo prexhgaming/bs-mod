@@ -4,8 +4,6 @@
 # APK 32-bit, so the game's process is 32-bit too.
 # (Trade-off: 64-bit-only devices, e.g. recent Pixels, cannot install this APK.
 #  Add arm64-v8a back here and in app/build.gradle's abiFilters if that matters.)
-# ABI is controlled by the app module's android.ndk.abiFilters (app/build.gradle).
-# Keep a sensible default here for direct ndk-build invocations.
 APP_ABI := armeabi-v7a
 APP_STL       := c++_static
 
