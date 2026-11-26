@@ -9,7 +9,7 @@
 ## Modules
 - `:app` — Kotlin launcher UI (`zyn.bs`). Launcher activity `.view.game.GameActivity`, `Application` `.app.App`. Also hosts the native mod menu `libzyn-bs.so`.
 - `:VirtualApp` — the engine, vendored source (`com.lody.virtual.**` + `com.xdja.**`, 657 Java, 86 AIDL, native `src/main/jni`). `namespace com.lody.virtual`, manifest `package=` removed (AGP 8). Depends only on `androidx.core`; appcompat/support-v7 were dropped and the 16 `android.support.*` imports rewritten to AndroidX.
-- `:black-reflection` / `:compiler` — legacy Bcore reflection stubs, still built but unused by the engine.
+- `:app` and `:VirtualApp` are the **only** modules. The Bcore-era `:black-reflection` + `:compiler` (annotation-processor pair) were deleted: nothing imported `zyn.bs.core.reflection.**` and nothing declared `annotationProcessor`/`kapt` for them.
 - Engine wiring: `App.onCreate` calls `VirtualCore.get().startup(this, SettingConfig)` and registers `AppCallback`; `AppManager`/`BlackBoxLoader`/`GameRepository` use `VirtualCore`. **No `BlackBoxCore`.**
 
 ### Engine build constraints (`:VirtualApp`)

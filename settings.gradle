@@ -27,6 +27,4 @@ dependencyResolutionManagement {
 rootProject.name = "NewBlackbox"
 
 include ':app'
-include(":black-reflection")
-include(":compiler")
 include ':VirtualApp'

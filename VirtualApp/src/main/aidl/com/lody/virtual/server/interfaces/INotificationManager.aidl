@@ -1,6 +1,5 @@
 package com.lody.virtual.server.interfaces;
 
-import android.os.RemoteException;
 import com.xdja.zs.INotificationCallback;
 
 /**
