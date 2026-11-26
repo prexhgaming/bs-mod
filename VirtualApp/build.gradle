@@ -17,6 +17,14 @@ android {
         minSdk libs.versions.minSdk.get().toInteger()
         targetSdk libs.versions.targetSdk.get().toInteger()
 
+        // Build only the ABI the game actually needs. The host app's
+        // abiFilters is the packaging authority, but a library module does
+        // not inherit it, so without this the engine would also build 64-bit
+        // v++_64 code (and the x86 variants) that can never ship.
+        ndk {
+            abiFilters 'armeabi-v7a'
+        }
+
         // BuildConfig.VERSION_CODE is no longer generated for libraries under
         // AGP 8, so the engine's own fields are declared explicitly here and
         // read from com.lody.virtual.Build.

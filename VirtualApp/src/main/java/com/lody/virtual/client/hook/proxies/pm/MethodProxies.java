@@ -564,8 +564,8 @@ class MethodProxies {
                     (String) args[1], (Integer) args[2], userId);
             Object _hostResult = method.invoke(who, args);
             if (_hostResult != null) {
-                List<ResolveInfo> hostResult = slice ? ParceledListSlice.getList.call(_hostResult)
-                        : (List) _hostResult;
+                List<ResolveInfo> hostResult = slice ? (List<ResolveInfo>) ParceledListSlice.getList.call(_hostResult)
+                        : (List<ResolveInfo>) _hostResult;
                 if (hostResult != null) {
                     Iterator<ResolveInfo> iterator = hostResult.iterator();
                     while (iterator.hasNext()) {
@@ -657,8 +657,8 @@ class MethodProxies {
 
             Object _hostResult = method.invoke(who, args);
             if (_hostResult != null) {
-                List<ResolveInfo> hostResult = slice ? ParceledListSlice.getList.call(_hostResult)
-                        : (List) _hostResult;
+                List<ResolveInfo> hostResult = slice ? (List<ResolveInfo>) ParceledListSlice.getList.call(_hostResult)
+                        : (List<ResolveInfo>) _hostResult;
                 if (hostResult != null) {
                     Iterator<ResolveInfo> iterator = hostResult.iterator();
                     while (iterator.hasNext()) {
@@ -1028,8 +1028,8 @@ class MethodProxies {
             List<ProviderInfo> infos = VPackageManager.get().queryContentProviders(processName, vuid, 0);
             Object _hostResult = method.invoke(who, args);
             if (_hostResult != null) {
-                List<ProviderInfo> hostResult = slice ? ParceledListSlice.getList.call(_hostResult)
-                        : (List) _hostResult;
+                List<ProviderInfo> hostResult = slice ? (List<ProviderInfo>) ParceledListSlice.getList.call(_hostResult)
+                        : (List<ProviderInfo>) _hostResult;
                 Iterator<ProviderInfo> it = hostResult.iterator();
                 while (it.hasNext()) {
                     ProviderInfo info = it.next();
@@ -1312,8 +1312,8 @@ class MethodProxies {
             int userId = VUserHandle.myUserId();
             List<ApplicationInfo> appInfos = VPackageManager.get().getInstalledApplications(flags, userId);
             Object _hostResult = method.invoke(who, args);
-            List<ApplicationInfo> hostResult = slice ? ParceledListSlice.getList.call(_hostResult)
-                    : (List) _hostResult;
+            List<ApplicationInfo> hostResult = slice ? (List<ApplicationInfo>) ParceledListSlice.getList.call(_hostResult)
+                    : (List<ApplicationInfo>) _hostResult;
             Iterator<ApplicationInfo> it = hostResult.iterator();
             while (it.hasNext()) {
                 ApplicationInfo info = it.next();
@@ -1345,8 +1345,8 @@ class MethodProxies {
             int userId = VUserHandle.myUserId();
             List<PackageInfo> packageInfos = VPackageManager.get().getInstalledPackages(flags, userId);
             Object _hostResult = method.invoke(who, args);
-            List<PackageInfo> hostResult = slice ? ParceledListSlice.getList.call(_hostResult)
-                    : (List) _hostResult;
+            List<PackageInfo> hostResult = slice ? (List<PackageInfo>) ParceledListSlice.getList.call(_hostResult)
+                    : (List<PackageInfo>) _hostResult;
             Iterator<PackageInfo> it = hostResult.iterator();
             while (it.hasNext()) {
                 PackageInfo info = it.next();
@@ -1384,8 +1384,8 @@ class MethodProxies {
             List<ResolveInfo> appResult = VPackageManager.get().queryIntentReceivers((Intent) args[0], (String) args[1],
                     (Integer) args[2], userId);
             Object _hostResult = method.invoke(who, args);
-            List<ResolveInfo> hostResult = slice ? ParceledListSlice.getList.call(_hostResult)
-                    : (List) _hostResult;
+            List<ResolveInfo> hostResult = slice ? (List<ResolveInfo>) ParceledListSlice.getList.call(_hostResult)
+                    : (List<ResolveInfo>) _hostResult;
             if (hostResult != null) {
                 Iterator<ResolveInfo> iterator = hostResult.iterator();
                 while (iterator.hasNext()) {
@@ -1499,8 +1499,8 @@ class MethodProxies {
             List<ResolveInfo> appResult = VPackageManager.get().queryIntentContentProviders((Intent) args[0], (String) args[1],
                     (Integer) args[2], userId);
             Object _hostResult = method.invoke(who, args);
-            List<ResolveInfo> hostResult = slice ? ParceledListSlice.getList.call(_hostResult)
-                    : (List) _hostResult;
+            List<ResolveInfo> hostResult = slice ? (List<ResolveInfo>) ParceledListSlice.getList.call(_hostResult)
+                    : (List<ResolveInfo>) _hostResult;
             if (hostResult != null) {
                 Iterator<ResolveInfo> iterator = hostResult.iterator();
                 while (iterator.hasNext()) {

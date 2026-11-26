@@ -146,8 +146,8 @@ class MethodProxies {
             Object _infos = method.invoke(who, args);
             boolean slice = ParceledListSliceCompat.isReturnParceledListSlice(method);
             //noinspection unchecked
-            List<ActivityManager.RecentTaskInfo> infos = slice ? ParceledListSlice.getList.call(_infos)
-                    : (List) _infos;
+            List<ActivityManager.RecentTaskInfo> infos = slice ? (List<ActivityManager.RecentTaskInfo>) ParceledListSlice.getList.call(_infos)
+                    : (List<ActivityManager.RecentTaskInfo>) _infos;
             Iterator<ActivityManager.RecentTaskInfo> it = infos.iterator();
             while (it.hasNext()){
                 ActivityManager.RecentTaskInfo info = it.next();

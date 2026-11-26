@@ -108,8 +108,8 @@ class MethodProxies {
         public Object call(Object who, Method method, Object... args) throws Throwable {
             Object ret = super.call(who, method, args);
             boolean slice = ParceledListSliceCompat.isReturnParceledListSlice(method);
-            List<NotificationChannelGroup> list = slice ? ParceledListSlice.getList.call(ret)
-                    : (List) ret;
+            List<NotificationChannelGroup> list = slice ? (List<NotificationChannelGroup>) ParceledListSlice.getList.call(ret)
+                    : (List<NotificationChannelGroup>) ret;
             if (list != null) {
                 for (int i = list.size() - 1; i >= 0; i--) {
                     NotificationChannelGroup old = list.get(i);
@@ -189,8 +189,8 @@ class MethodProxies {
         public Object call(Object who, Method method, Object... args) throws Throwable {
             Object result = super.call(who, method, args);
             boolean slice = ParceledListSliceCompat.isReturnParceledListSlice(method);
-            List<NotificationChannel> list = slice ? ParceledListSlice.getList.call(result)
-                    : (List) result;
+            List<NotificationChannel> list = slice ? (List<NotificationChannel>) ParceledListSlice.getList.call(result)
+                    : (List<NotificationChannel>) result;
             if (list != null) {
                 for (int i = list.size() - 1; i >= 0; i--) {
                     NotificationChannel old = list.get(i);
@@ -439,8 +439,8 @@ class MethodProxies {
             }
             Object list = super.call(who, method, args);
             boolean slice = ParceledListSliceCompat.isReturnParceledListSlice(method);
-            List<StatusBarNotification> resultList = slice ? ParceledListSlice.getList.call(list)
-                    : (List) list;
+            List<StatusBarNotification> resultList = slice ? (List<StatusBarNotification>) ParceledListSlice.getList.call(list)
+                    : (List<StatusBarNotification>) list;
             if (resultList != null) {
                 for (int i = resultList.size() - 1; i >= 0; i--) {
                     StatusBarNotification value = resultList.get(i);
