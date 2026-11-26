@@ -99,11 +99,49 @@ static int my_connect(int sockfd, const struct sockaddr* addr, socklen_t addrlen
 static bool (*_hook_bypass)(void*) = nullptr;
 static bool hook_bypass(void*) { return false; }
 
-// Manual escape hatch: set to a known libGame.so offset to bypass the runtime
-// scan. 0 = always scan, never guess.
-static constexpr uintptr_t kNexoraPyRunOffset = 0;
+// Verified against the shipped libGame.so: PyRun_StringFlags lives at 0x024dbcf0
+// (Thumb, 0x64 bytes). Set back to 0 to fall back to the runtime scan.
+static constexpr uintptr_t kNexoraPyRunOffset = 0x024dbcf0;
 
-static int iLoaded = 0, iLoadAt = 2;
+// ---- Python injection: probe first, then load once the framework answers ----
+// The game's own framework (gclient.*) only becomes importable after its
+// bootstrap has run, and that moment differs per launch. Injecting srcpy too
+// early aborts on ImportError, and the old one-shot code set "loaded" *before*
+// knowing the injection worked -- so a single early failure was permanent and
+// silent. Now a self-contained probe (which never raises) reports readiness by
+// writing a marker file, and the real script is injected only once it appears.
+// Backoff = calls 2,4,8,...,1024 so a slow bootstrap is still caught without
+// hammering the interpreter.
+static char g_probe[512];
+static char g_marker[256];
+static const char* g_probeSrc = nullptr;
+static std::atomic<int> g_pyCalls{0};
+static std::atomic<int> g_pyStage{0};        // 0 probing, 1 ready, 2 injected
+
+static bool pyDue(int n) {
+    for (int t = 2, i = 0; i < 10; i++, t <<= 1)
+        if (n == t) return true;
+    return false;
+}
+
+static void pyInitPaths() {
+    if (g_probeSrc) return;
+    snprintf(g_marker, sizeof(g_marker), "/data/data/%s/imgui/.nx_ready", PACKAGE_NAME);
+    snprintf(g_probe, sizeof(g_probe),
+             "try:\n"
+             "    import gclient.framework.entities.space\n"
+             "    __import__('builtins').open(r'%s','w').write('1')\n"
+             "except BaseException:\n"
+             "    pass\n",
+             g_marker);
+    g_probeSrc = g_probe;
+}
+
+static bool pyMarkerExists() {
+    pyInitPaths();
+    return access(g_marker, F_OK) == 0;
+}
+
 static std::atomic<int> g_pyBadCalls{0};
 static std::atomic<int> g_pyValidCalls{0};
 
@@ -119,14 +157,38 @@ DEFINES(void*, iMissMyWife, const char* v0, int v1, void* v2, void* v3, void* v4
         NX_LOGE("hook target looks WRONG: 64 calls, none with a valid start code");
     }
 
-    static bool loaded = false;
-    if (v1 == 257) {
-        iLoaded++;
-        if (iLoaded >= iLoadAt && !loaded) {
-            loaded = true;
-            _iMissMyWife(srcpy, 257, v2, v2, NULL);
+    if (v1 == 257 && v2) {
+        pyInitPaths();
+        const int n = g_pyCalls.fetch_add(1) + 1;
+        int stage = g_pyStage.load(std::memory_order_acquire);
+
+        if (stage == 0) {
+            if (pyMarkerExists()) {
+                stage = 1;
+                g_pyStage.store(1, std::memory_order_release);
+                NX_LOGI("python framework ready at call %d", n);
+            } else if (pyDue(n)) {
+                NX_LOGI("python probe at call %d", n);
+                _iMissMyWife(g_probeSrc, 257, v2, v2, NULL);
+            }
+        }
+
+        if (stage == 1) {
+            g_pyStage.store(2, std::memory_order_release);
+            void* r = _iMissMyWife(srcpy, 257, v2, v2, NULL);
+            if (r) {
+                unlink(g_marker);
+                NX_LOGI("srcpy loaded at call %d", n);
+            } else {
+                // Imports blew up after the probe said ready: reopen the state
+                // machine so a later call retries instead of giving up forever.
+                g_pyStage.store(0, std::memory_order_release);
+                unlink(g_marker);
+                NX_LOGE("srcpy failed at call %d, will retry", n);
+            }
         }
     }
+
     return _iMissMyWife(v0, v1, v2, v3, v4);
 }
 
@@ -136,13 +198,18 @@ DEFINES(void*, iMissMyWife, const char* v0, int v1, void* v2, void* v3, void* v4
 static void* py_hook_thread(void* arg) {
     const uintptr_t libGameBase = (uintptr_t)arg;
 
-    // No hardcoded offset: the game is obfuscated and statically links CPython, so
-    // libGameBase + N moves with every build. Locate PyRun_StringFlags by structure.
-    uintptr_t pyRun = nx::findPyRunStringFlags("libGame.so");
-    if (!pyRun && kNexoraPyRunOffset != 0) {
+    // A verified offset beats the scan: it is instant, and the two scan strategies
+    // do not work on this build (nothing in .text references the "<string>"
+    // literal directly -- it is reached through a GOT slot for _PyRuntime -- and
+    // the 257 call-site vote is too scattered to converge). The scan stays as the
+    // fallback for a build without a known offset.
+    uintptr_t pyRun = 0;
+    if (kNexoraPyRunOffset != 0) {
         pyRun = libGameBase + kNexoraPyRunOffset;
-        NX_LOGI("scan failed, using manual offset +0x%llx -> %p",
+        NX_LOGI("using PyRun_StringFlags offset +0x%llx -> %p",
                 (unsigned long long)kNexoraPyRunOffset, (void*)pyRun);
+    } else {
+        pyRun = nx::findPyRunStringFlags("libGame.so");
     }
     if (pyRun) {
         HOOKI(pyRun, iMissMyWife);
