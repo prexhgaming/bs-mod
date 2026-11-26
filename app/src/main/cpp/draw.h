@@ -4,8 +4,6 @@
 #endif
 #define INL_PATH "/storage/emulated/0/Nexora/imgui.ini"
 
-#include "AImGui/FrameRateController.hpp"
-
 #include <string>
 #include <vector>
 #include <unordered_map>
@@ -276,13 +274,6 @@ void LoadConfig() {
         if (j.contains("float")) for (auto& [k,v] : j["float"].items()) if (v.is_number()) sync_float[k] = v.get<float>();
         if (j.contains("int")) for (auto& [k,v] : j["int"].items()) if (v.is_number()) sync_int[k] = v.get<int>();
     } catch (...) { SetDefaultConfig(); }
-}
-
-static void SetupRenderOptimization() {
-    EGLDisplay dpy = eglGetCurrentDisplay();
-    if (dpy != EGL_NO_DISPLAY) eglSwapInterval(dpy, 1);
-    glDisable(GL_DEPTH_TEST); glDisable(GL_CULL_FACE); glDisable(GL_SCISSOR_TEST);
-    glEnable(GL_BLEND); glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 }
 
 static void CleanupGL() {
@@ -584,19 +575,11 @@ DEFINES(EGLBoolean, Draw, EGLDisplay dpy, EGLSurface surface) {
     return _Draw(dpy, surface);
 }
 
-static EGLBoolean (*orig_eglSwapInterval)(EGLDisplay dpy, EGLint interval) = nullptr;
-static EGLBoolean hooked_eglSwapInterval(EGLDisplay dpy, EGLint interval) {
-    return orig_eglSwapInterval(dpy, 0);
-}
-
 // ============================================================
 // 🔥 IMGUI() - INSTALL THE SWAP HOOK
 // ============================================================
 void IMGUI() {
     start_entity_reader();
-
-    // FrameRateController - minta 90Hz display mode
-    FrameRateController::Apply(g_activity, eglGetCurrentDisplay(), true, 90.0f);
 
     void *libAndroid = dlopen("libandroid.so", RTLD_NOW);
     if (libAndroid) {
@@ -607,14 +590,6 @@ void IMGUI() {
         void *symEvent = dlsym(libAndroid, "AInputQueue_getEvent");  
         protectFunc(symEvent);  
         DobbyHook(symEvent, (void *)hooked_AInputQueue_getEvent, (void **)&orig_AInputQueue_getEvent);  
-    }
-    
-    void *libEGL = dlopen("libEGL.so", RTLD_NOW);
-    if (libEGL) {
-        void *eglSwapIntervalFunc = dlsym(libEGL, "eglSwapInterval");
-        if (eglSwapIntervalFunc) {
-            DobbyHook(eglSwapIntervalFunc, (void *)hooked_eglSwapInterval, (void **)&orig_eglSwapInterval);
-        }
     }
 
     // ============================================================

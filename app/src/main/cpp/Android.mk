@@ -49,7 +49,6 @@ endif
 # ── Source Files ──────────────────────────────────────────────
 LOCAL_SRC_FILES := \
     main.cpp \
-    AImGui/FrameRateController.cpp \
     KittyMemory/KittyMemory.cpp \
     KittyMemory/MemoryPatch.cpp \
     KittyMemory/MemoryBackup.cpp \
@@ -72,7 +71,6 @@ LOCAL_SRC_FILES := \
 LOCAL_C_INCLUDES := \
     $(LOCAL_PATH) \
     $(LOCAL_PATH)/AndInlineHook \
-    $(LOCAL_PATH)/AImGui \
     $(LOCAL_PATH)/include \
     $(LOCAL_PATH)/include/cpp \
     $(LOCAL_PATH)/include/cpp/imgui \
