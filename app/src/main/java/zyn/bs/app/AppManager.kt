@@ -3,76 +3,78 @@ package zyn.bs.app
 import android.content.Context
 import android.content.SharedPreferences
 import android.util.Log
-import zyn.bs.view.main.BlackBoxLoader
+import com.lody.virtual.client.core.VirtualCore
+import zyn.bs.GameTarget
 
 /**
- * updated by alex5402 on 4/9/21.
- * * ∧＿∧
- * (`･ω･∥
- * 丶　つ０
- * しーＪ
- * TFNQw5HgWUS33Ke1eNmSFTwoQySGU7XNsK (USDT TRC20)
+ * Engine-independent manager for sandbox lifecycle.
+ * All BlackBoxCore calls have been replaced with VirtualApp equivalents.
+ * GMS is intentionally ignored per user decision — the game handles its own GMS.
  */
 object AppManager {
+
     private const val TAG = "AppManager"
-    
+
+    /** Called once from [App.onCreate] after VirtualCore startup. */
     @JvmStatic
-    val mBlackBoxLoader by lazy {
-        try {
-            BlackBoxLoader()
-        } catch (e: Exception) {
-            Log.e(TAG, "Error creating BlackBoxLoader: ${e.message}")
-
-            BlackBoxLoader() // Try again, but this might fail
-        }
-    }
-
-    @JvmStatic
-    val mBlackBoxCore by lazy {
-        try {
-            mBlackBoxLoader.getBlackBoxCore()
-        } catch (e: Exception) {
-            Log.e(TAG, "Error getting BlackBoxCore: ${e.message}")
-            throw e // Re-throw as this is critical
-        }
-    }
-
-    @JvmStatic
-    val mRemarkSharedPreferences: SharedPreferences by lazy {
-        try {
-            App.getContext().getSharedPreferences("UserRemark", Context.MODE_PRIVATE)
-        } catch (e: Exception) {
-            Log.e(TAG, "Error creating SharedPreferences: ${e.message}")
-            throw e // Re-throw as this is critical
-        }
-    }
-
-    fun doAttachBaseContext(context: Context) {
-        try {
-            mBlackBoxLoader.attachBaseContext(context)
-            mBlackBoxLoader.addLifecycleCallback()
-        } catch (e: Exception) {
-            Log.e(TAG, "Error in doAttachBaseContext: ${e.message}")
-            // Don't re-throw as this might not be critical for app startup
-        }
-    }
-
     fun doOnCreate(context: Context) {
         try {
-            mBlackBoxLoader.doOnCreate(context)
-            initThirdService(context)
-        } catch (e: Exception) {
-            Log.e(TAG, "Error in doOnCreate: ${e.message}")
-            // Don't re-throw as this might not be critical for app startup
+            Log.d(TAG, "doOnCreate: VirtualCore already started; lifecycle hook registered in App")
+        } catch (e: Throwable) {
+            Log.e(TAG, "doOnCreate failed", e)
         }
     }
 
-    private fun initThirdService(context: Context) {
+    /** Legacy entry point kept for callers; VirtualCore is initialised in [App.onCreate]. */
+    @JvmStatic
+    fun doAttachBaseContext(context: Context) {
         try {
-            // Initialize any third-party services here
-            // Currently empty, but with error handling for future additions
-        } catch (e: Exception) {
-            Log.e(TAG, "Error in initThirdService: ${e.message}")
+            Log.d(TAG, "doAttachBaseContext: VirtualCore already initialised")
+        } catch (e: Throwable) {
+            Log.e(TAG, "doAttachBaseContext failed", e)
         }
+    }
+
+    /** Install the target game into the sandbox user. Returns true on success. */
+    @JvmStatic
+    fun installGame(): Boolean = try {
+        VirtualCore.get().installPackageAsUser(GameTarget.USER_ID, GameTarget.PACKAGE_NAME)
+    } catch (e: Throwable) {
+        Log.e(TAG, "installGame failed", e)
+        false
+    }
+
+    /** Check whether the target game is installed in the sandbox user. */
+    @JvmStatic
+    fun isGameInSandbox(): Boolean = try {
+        VirtualCore.get().isAppInstalled(GameTarget.PACKAGE_NAME)
+    } catch (e: Throwable) {
+        Log.e(TAG, "isGameInSandbox failed", e)
+        false
+    }
+
+    /** Check whether the target game is installed on the host device. */
+    @JvmStatic
+    fun isGameOnDevice(): Boolean = try {
+        App.getContext().packageManager.getPackageInfo(GameTarget.PACKAGE_NAME, 0)
+        true
+    } catch (e: Throwable) {
+        false
+    }
+
+    /** VirtualApp does not have BlackBox's Google-services problem, so GMS is always "supported". */
+    @JvmStatic
+    fun isGmsSupported(): Boolean = true
+
+    /** Shared preferences used across the app. */
+    @JvmStatic
+    val mRemarkSharedPreferences: SharedPreferences by lazy {
+        App.getContext().getSharedPreferences("UserRemark", Context.MODE_PRIVATE)
+    }
+
+    /** No-op: permissions are not requested in VirtualApp (user decision); the game handles its own. */
+    @JvmStatic
+    fun requestGamePermissions() {
+        Log.d(TAG, "requestGamePermissions: VirtualApp does not request permissions; the game handles its own")
     }
 }

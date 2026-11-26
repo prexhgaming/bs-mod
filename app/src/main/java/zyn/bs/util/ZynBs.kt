@@ -7,11 +7,11 @@ import java.io.File
  * The in-game mod menu: `libzyn-bs.so` (native sources in `app/src/main/cpp`).
  *
  * There is exactly **one** load site and it lives in the game's own process:
- * [zyn.bs.view.main.BlackBoxLoader]'s `afterApplicationOnCreate`
- * hook, which the engine runs while the cloned game starts up. Nothing here is
- * ever called from `App.onCreate`, because that runs in the *host* process — the
- * overlay has no business being mapped there (it waits for `libGame.so`, reads
- * the game's own files, and hooks the game's sockets).
+ * [zyn.bs.app.App]'s `AppCallback.afterApplicationCreate` hook, which the
+ * VirtualApp engine runs while the cloned game starts up. Nothing here is
+ * ever called from the host process — the overlay has no business being mapped
+ * there (it waits for `libGame.so`, reads the game's own files, and hooks the
+ * game's sockets).
  *
  * Nothing crosses JNI:
  *  - no `external fun` declarations, no method calls into the library;
@@ -66,17 +66,21 @@ object ZynBs {
     }
 
     /**
-     * True when this process really is the game (or one of its sub-processes).
+     * True when this process is a sandboxed guest, i.e. the game (or one of its
+     * sub-processes).
      *
      * Checked against `/proc/self/cmdline` rather than a [android.content.Context]:
-     * inside the sandbox the engine rewrites app paths and renames processes, and
-     * the kernel's view of our own cmdline is the one thing that cannot be
-     * redirected. Fails open — if the cmdline is unreadable we prefer a working
-     * menu over a silently disabled one.
+     * inside the sandbox the engine rewrites app paths and renames processes.
+     * VirtualApp names a guest process `<hostPackage>:<suffix>`, so the host's
+     * own main process (no colon) is the only one we must refuse. Fails open —
+     * if the cmdline is unreadable we prefer a working menu over a silently
+     * disabled one.
      */
     private fun isGameProcess(packageName: String): Boolean {
         val process = currentProcessName() ?: return true
-        return process == packageName || process.startsWith("$packageName:")
+        return process == packageName ||
+            process.startsWith("$packageName:") ||
+            process.contains(':')
     }
 
     private fun currentProcessName(): String? = runCatching {

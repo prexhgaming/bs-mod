@@ -1,233 +1,56 @@
 package zyn.bs.view.main
 
-import android.app.Application
 import android.content.Context
 import android.util.Log
-import zyn.bs.core.BlackBoxCore
-import zyn.bs.GameTarget
-import zyn.bs.util.ZynBs
-import zyn.bs.core.app.BActivityThread
-import zyn.bs.core.app.configuration.AppLifecycleCallback
-import zyn.bs.core.app.configuration.ClientConfiguration
+import com.lody.virtual.client.core.VirtualCore
 import zyn.bs.app.App
 import zyn.bs.biz.cache.AppSharedPreferenceDelegate
-import java.io.File
 
 /**
+ * Thin host-side wrapper around the VirtualApp engine.
  *
- * @Description:
- * @Author: wukaicheng
- * @CreateDate: 2021/5/6 23:38
+ * Engine boot and the guest-process lifecycle hook (which maps `libzyn-bs.so`)
+ * live in [App.onCreate] via `AppCallback`. This class only keeps the host-side
+ * preference flags and exposes the engine singleton.
  */
 class BlackBoxLoader {
 
-    private var mHideRoot by AppSharedPreferenceDelegate(App.getContext(), false)
-    private var mHideXposed by AppSharedPreferenceDelegate(App.getContext(), false)
-    private var mDaemonEnable by AppSharedPreferenceDelegate(App.getContext(), false)
-    private var mShowShortcutPermissionDialog by AppSharedPreferenceDelegate(App.getContext(), true)
+    private val prefsContext: Context
+        get() = App.getContext()
 
-    fun hideRoot(): Boolean {
-        return try {
-            mHideRoot
-        } catch (e: Exception) {
-            Log.e(TAG, "Error getting hideRoot: ${e.message}")
-            false
-        }
-    }
+    private var mHideRoot: Boolean by AppSharedPreferenceDelegate(prefsContext, false)
+    private var mHideXposed: Boolean by AppSharedPreferenceDelegate(prefsContext, false)
+    private var mDaemonEnable: Boolean by AppSharedPreferenceDelegate(prefsContext, false)
+    private var mShowShortcutPermissionDialog: Boolean by AppSharedPreferenceDelegate(prefsContext, true)
 
-    fun invalidHideRoot(hideRoot: Boolean) {
-        try {
-            this.mHideRoot = hideRoot
-        } catch (e: Exception) {
-            Log.e(TAG, "Error setting hideRoot: ${e.message}")
-        }
-    }
+    fun hideRoot(): Boolean = mHideRoot
+    fun invalidHideRoot(value: Boolean) { mHideRoot = value }
 
-    fun hideXposed(): Boolean {
-        return try {
-            mHideXposed
-        } catch (e: Exception) {
-            Log.e(TAG, "Error getting hideXposed: ${e.message}")
-            false
-        }
-    }
+    fun hideXposed(): Boolean = mHideXposed
+    fun invalidHideXposed(value: Boolean) { mHideXposed = value }
 
-    fun invalidHideXposed(hideXposed: Boolean) {
-        try {
-            this.mHideXposed = hideXposed
-        } catch (e: Exception) {
-            Log.e(TAG, "Error setting hideXposed: ${e.message}")
-        }
-    }
+    fun daemonEnable(): Boolean = mDaemonEnable
+    fun invalidDaemonEnable(value: Boolean) { mDaemonEnable = value }
 
-    fun daemonEnable(): Boolean {
-        return try {
-            mDaemonEnable
-        } catch (e: Exception) {
-            Log.e(TAG, "Error getting daemonEnable: ${e.message}")
-            false
-        }
-    }
+    fun showShortcutPermissionDialog(): Boolean = mShowShortcutPermissionDialog
+    fun invalidShortcutPermissionDialog(value: Boolean) { mShowShortcutPermissionDialog = value }
 
-    fun invalidDaemonEnable(enable: Boolean) {
-        try {
-            this.mDaemonEnable = enable
-        } catch (e: Exception) {
-            Log.e(TAG, "Error setting daemonEnable: ${e.message}")
-        }
-    }
+    /** Returns the VirtualApp engine singleton (replaces `BlackBoxCore.get()`). */
+    fun getVirtualCore(): VirtualCore = VirtualCore.get()
 
-    fun showShortcutPermissionDialog(): Boolean {
-        return try {
-            mShowShortcutPermissionDialog
-        } catch (e: Exception) {
-            Log.e(TAG, "Error getting showShortcutPermissionDialog: ${e.message}")
-            true
-        }
-    }
-
-    fun invalidShortcutPermissionDialog(show: Boolean) {
-        try {
-            this.mShowShortcutPermissionDialog = show
-        } catch (e: Exception) {
-            Log.e(TAG, "Error setting showShortcutPermissionDialog: ${e.message}")
-        }
-    }
-
-    fun getBlackBoxCore(): BlackBoxCore {
-        return try {
-            BlackBoxCore.get()
-        } catch (e: Exception) {
-            Log.e(TAG, "Error getting BlackBoxCore: ${e.message}")
-            throw e
-        }
-    }
-
-    fun addLifecycleCallback() {
-        try {
-            BlackBoxCore.get().addAppLifecycleCallback(object : AppLifecycleCallback() {
-                override fun beforeCreateApplication(
-                    packageName: String?,
-                    processName: String?,
-                    context: Context?,
-                    userId: Int
-                ) {
-                    try {
-                        Log.d(
-                            TAG,
-                            "beforeCreateApplication: pkg $packageName, processName $processName,userID:${BActivityThread.getUserId()}"
-                        )
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Error in beforeCreateApplication: ${e.message}")
-                    }
-                }
-
-                override fun beforeApplicationOnCreate(
-                    packageName: String?,
-                    processName: String?,
-                    application: Application?,
-                    userId: Int
-                ) {
-                    try {
-                        Log.d(TAG, "beforeApplicationOnCreate: pkg $packageName, processName $processName")
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Error in beforeApplicationOnCreate: ${e.message}")
-                    }
-                }
-
-                override fun afterApplicationOnCreate(
-                    packageName: String?,
-                    processName: String?,
-                    application: Application?,
-                    userId: Int
-                ) {
-                    try {
-                        Log.d(TAG, "afterApplicationOnCreate: pkg $packageName, processName $processName")
-                        // The guest lifecycle runs inside the game's own process,
-                        // and this is the ONLY place libzyn-bs.so is mapped. The
-                        // library starts itself from a constructor and returns, so
-                        // nothing is passed across JNI and the host process
-                        // (App.onCreate) never touches it.
-                        if (application != null && packageName == GameTarget.PACKAGE_NAME) {
-                            ZynBs.load(packageName, GameTarget.USER_ID)
-                        }
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Error in afterApplicationOnCreate: ${e.message}")
-                    }
-                }
-            })
-        } catch (e: Exception) {
-            Log.e(TAG, "Error adding lifecycle callback: ${e.message}")
-        }
-    }
-
+    /** No-op: engine init happens in [App.onCreate]. */
     fun attachBaseContext(context: Context) {
-        try {
-            BlackBoxCore.get().doAttachBaseContext(context, object : ClientConfiguration() {
-                override fun getHostPackageName(): String {
-                    return try {
-                        context.packageName
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Error getting package name: ${e.message}")
-                        "unknown"
-                    }
-                }
-
-                override fun isHideRoot(): Boolean {
-                    return try {
-                        mHideRoot
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Error checking hideRoot: ${e.message}")
-                        false
-                    }
-                }
-
-                override fun isEnableDaemonService(): Boolean {
-                    return try {
-                        mDaemonEnable
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Error checking daemonEnable: ${e.message}")
-                        false
-                    }
-                }
-
-                override fun requestInstallPackage(file: File?, userId: Int): Boolean {
-                    return try {
-                        if (file == null) {
-                            Log.w(TAG, "requestInstallPackage: file is null")
-                            return false
-                        }
-                        val packageInfo =
-                            context.packageManager.getPackageArchiveInfo(file.absolutePath, 0)
-                        false
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Error in requestInstallPackage: ${e.message}")
-                        false
-                    }
-                }
-            })
-        } catch (e: Exception) {
-            Log.e(TAG, "Error in attachBaseContext: ${e.message}")
-        }
+        Log.d(TAG, "attachBaseContext: no-op, VirtualCore already initialised")
     }
 
+    /** No-op: the guest lifecycle hook is registered in [App.onCreate]. */
+    fun addLifecycleCallback() {
+        Log.d(TAG, "addLifecycleCallback: no-op, AppCallback registered in App")
+    }
+
+    /** No-op: engine init happens in [App.onCreate]. */
     fun doOnCreate(context: Context) {
-        try {
-            BlackBoxCore.get().doCreate()
-            
-            // Register callback to refresh app list when services become available
-            try {
-                BlackBoxCore.get().addServiceAvailableCallback {
-                    Log.d(TAG, "Services became available, triggering app list refresh")
-                    // This will be called when services are ready
-                    // The UI components can listen for this and refresh their data
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "Error registering service available callback: ${e.message}")
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Error in doOnCreate: ${e.message}")
-        }
+        Log.d(TAG, "doOnCreate: no-op, VirtualCore already initialised")
     }
 
     companion object {

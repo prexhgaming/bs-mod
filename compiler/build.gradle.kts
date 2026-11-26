@@ -2,8 +2,9 @@ plugins {
     id("java-library")
 }
 java {
-    sourceCompatibility = JavaVersion.VERSION_17
-    targetCompatibility = JavaVersion.VERSION_17
+    val javaVersion = libs.versions.javaVersion.get()
+    sourceCompatibility = JavaVersion.toVersion(javaVersion.toString())
+    targetCompatibility = JavaVersion.toVersion(javaVersion.toString())
 }
 
 dependencies {

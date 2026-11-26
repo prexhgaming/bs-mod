@@ -4,20 +4,21 @@ import android.content.pm.ApplicationInfo
 import android.graphics.drawable.Drawable
 import android.net.Uri
 import android.util.Log
-import zyn.bs.core.BlackBoxCore
-import zyn.bs.core.entity.pm.InstallResult
+import com.lody.virtual.client.core.VirtualCore
+import com.lody.virtual.client.ipc.VActivityManager
+import com.lody.virtual.client.ipc.VPackageManager
+import com.lody.virtual.helper.utils.FileUtils
 import zyn.bs.GameTarget
 import zyn.bs.app.App
 import zyn.bs.bean.AppInfo
 
-
 /**
- * Everything that touches the BlackBox engine lives here.
+ * Everything that touches the VirtualApp engine lives here.
  *
- * The whole point of this build is that the user never has to press a "+"
- * button: if the game is installed on the phone, [provision] clones it into the
- * sandbox automatically, and the device's Google Play services are cloned too so
- * the game has a working GMS environment.
+ * The user never presses a "+": if the game is installed on the phone it is
+ * cloned into the sandbox automatically. GMS is intentionally ignored —
+ * VirtualApp does not have the Google-services problem BlackBox had, so no
+ * clone step, no chip, no status line (per user decision).
  */
 class GameRepository {
 
@@ -25,27 +26,23 @@ class GameRepository {
     enum class Stage { WAITING, GMS, GAME }
 
     /**
-     * Makes the sandbox usable: waits for the engine, clones GMS, clones the game.
-     *
+     * Makes the sandbox usable: waits for the engine, clones the game.
      * Safe to call repeatedly: every step is skipped when already done.
      */
     fun provision(onStage: (Stage) -> Unit = {}): SandboxStatus {
         onStage(Stage.WAITING)
         val servicesReady = awaitServices()
 
-        var gmsSupported = isGmsSupported()
-        var gmsInstalled = isGmsInstalled()
         var gameOnDevice = isGameOnDevice()
         var gameInSandbox = isGameInSandbox()
         var message: String? = null
         var importedNow = false
-        var gmsError: String? = null
 
         if (!servicesReady) {
-            Log.w(TAG, "Sandbox service did not become ready in time")
+            Log.w(TAG, "Sandbox engine did not become ready in time")
             return SandboxStatus(
-                gmsSupported = gmsSupported,
-                gmsInstalled = gmsInstalled,
+                gmsSupported = false,
+                gmsInstalled = true,
                 gameOnDevice = gameOnDevice,
                 gameInSandbox = gameInSandbox,
                 message = "The sandbox service did not start. Restart the app and try again.",
@@ -53,64 +50,39 @@ class GameRepository {
             )
         }
 
-        // 1. Clone the game first — it must be present in the sandbox before GMS.
         if (gameOnDevice && !gameInSandbox) {
             onStage(Stage.GAME)
-            val result = runCatching {
-                BlackBoxCore.get().installPackageAsUser(GameTarget.PACKAGE_NAME, GameTarget.USER_ID)
-            }.getOrNull()
+            val ok = runCatching {
+                VirtualCore.get().installPackageAsUser(GameTarget.USER_ID, GameTarget.PACKAGE_NAME)
+            }.getOrDefault(false)
             gameInSandbox = isGameInSandbox()
-            if (result == null || !result.success) {
-                message = result?.msg?.takeIf { it.isNotBlank() } ?: "The game could not be imported."
-                Log.w(TAG, "Game import failed: ${result?.msg}")
+            if (!ok) {
+                message = "The game could not be imported."
+                Log.w(TAG, "Game import failed")
             } else {
                 importedNow = true
                 Log.i(TAG, "Game imported into user ${GameTarget.USER_ID}")
             }
         }
 
-        // 2. GMS after the game is installed, so Play services are ready for it.
-        //    One engine call, the same contract the engine's own GMS entry point
-        //    uses: the returned InstallResult is authoritative, so there is
-        //    nothing to poll or re-verify afterwards.
-        if (gmsSupported && !gmsInstalled) {
-            onStage(Stage.GMS)
-            val result = installGms()
-            gmsInstalled = result?.success == true
-            if (gmsInstalled) {
-                Log.i(TAG, "GMS imported into user ${GameTarget.USER_ID}")
-            } else {
-                // Never silent: the notice card shows this, with a retry action.
-                // Without it a failed clone looks exactly like a working one, and
-                // the game just misbehaves later (sign-in errors).
-                gmsError = result?.msg?.takeIf { it.isNotBlank() }
-                    ?: "Google Play services could not be installed."
-                Log.w(TAG, "GMS import failed: $gmsError")
-            }
-        } else if (!gmsSupported) {
-            Log.i(TAG, "No Google Play services on this device, nothing to clone")
-        }
-
-        // Refresh the host-side flags in case something changed while we worked.
         gameOnDevice = isGameOnDevice()
-        gmsSupported = isGmsSupported()
 
         return SandboxStatus(
-            gmsSupported = gmsSupported,
-            gmsInstalled = gmsInstalled,
+            gmsSupported = false,
+            gmsInstalled = true,
             gameOnDevice = gameOnDevice,
             gameInSandbox = gameInSandbox,
             message = message,
             needsApk = !gameOnDevice && !gameInSandbox,
             importedNow = importedNow,
-            gmsError = gmsError
+            gmsError = null
         )
     }
 
     /** Apps currently installed inside the sandbox, target game first. */
     fun listSandboxApps(): List<AppInfo> {
         val installed = runCatching {
-            BlackBoxCore.get().getInstalledApplications(0, GameTarget.USER_ID)
+            VPackageManager.get().getInstalledApplications(0, GameTarget.USER_ID)
         }.getOrNull() ?: return emptyList()
 
         return installed
@@ -124,80 +96,51 @@ class GameRepository {
     /** Fallback path: imports an APK the user picked with the system file picker. */
     fun importFromUri(uri: Uri): OperationResult {
         awaitServices()
-        val result = runCatching {
-            BlackBoxCore.get().installPackageAsUser(uri, GameTarget.USER_ID)
-        }.getOrNull()
-        return if (result == null) {
-            OperationResult(false, "The APK could not be read.")
-        } else {
-            OperationResult(result.success, result.msg)
-        }
+        return runCatching {
+            val path = FileUtils.getFilePathByUri(App.getContext(), uri)
+                ?: return OperationResult(false, "The APK could not be read.")
+            val result = VirtualCore.get().installPackage(path, null)
+            OperationResult(result.isSuccess, result.error)
+        }.getOrElse { OperationResult(false, it.message) }
     }
 
-    fun launch(packageName: String): Boolean {
-        return runCatching {
-            // Nothing to hand over: the in-game menu is mapped by the guest
-            // lifecycle hook inside the game's own process (ZynBs.load()).
-            BlackBoxCore.get().launchApk(packageName, GameTarget.USER_ID)
-        }.getOrDefault(false)
-    }
+    fun launch(packageName: String): Boolean = runCatching {
+        // Nothing to hand over: the in-game menu is mapped by the guest
+        // lifecycle hook inside the game's own process (ZynBs.load()).
+        VActivityManager.get().launchApp(GameTarget.USER_ID, packageName)
+    }.getOrDefault(false)
 
     fun uninstall(packageName: String): OperationResult {
         return runCatching {
-            BlackBoxCore.get().uninstallPackageAsUser(packageName, GameTarget.USER_ID)
-            OperationResult(true)
+            val ok = VirtualCore.get().uninstallPackageAsUser(packageName, GameTarget.USER_ID)
+            OperationResult(ok)
         }.getOrElse { OperationResult(false, it.message) }
     }
 
     fun clearData(packageName: String): OperationResult {
         return runCatching {
-            BlackBoxCore.get().clearPackage(packageName, GameTarget.USER_ID)
-            OperationResult(true)
+            val ok = VirtualCore.get().cleanPackageData(packageName, GameTarget.USER_ID)
+            OperationResult(ok)
         }.getOrElse { OperationResult(false, it.message) }
     }
 
     fun isGameInSandbox(): Boolean = runCatching {
-        BlackBoxCore.get().isInstalled(GameTarget.PACKAGE_NAME, GameTarget.USER_ID)
+        VirtualCore.get().isAppInstalled(GameTarget.PACKAGE_NAME)
     }.getOrDefault(false)
 
     fun isGameOnDevice(): Boolean = runCatching {
         App.getContext().packageManager.getPackageInfo(GameTarget.PACKAGE_NAME, 0)
     }.isSuccess
 
-    private fun isGmsSupported(): Boolean = runCatching {
-        BlackBoxCore.get().isSupportGms()
-    }.getOrDefault(false)
-
-    private fun isGmsInstalled(): Boolean = runCatching {
-        BlackBoxCore.get().isInstallGms(GameTarget.USER_ID)
-    }.getOrDefault(false)
-
     /**
-     * Clones the device's Google packages into the sandbox user.
-     *
-     * A single engine call, like the engine's own GMS entry point: it already
-     * walks the Google package set and rolls back on failure, and
-     * [InstallResult.success] is the answer. No retry loop, no verification pass.
-     */
-    private fun installGms(): InstallResult? = runCatching {
-        BlackBoxCore.get().installGms(GameTarget.USER_ID)
-    }.getOrNull()
-
-    /**
-     * The engine binds its package service asynchronously. Every engine call is
-     * useless (and can throw) until it answers, so poll it once per launch.
+     * The engine binds its package service asynchronously. Poll once per launch.
      */
     private fun awaitServices(): Boolean {
-        repeat(SERVICE_READY_RETRIES) { attempt ->
-            val installed = runCatching {
-                BlackBoxCore.get().getInstalledApplications(0, GameTarget.USER_ID)
-            }.getOrNull()
-            if (installed != null) {
+        repeat(SERVICE_READY_RETRIES) {
+            if (runCatching { VirtualCore.get().isStartup() }.getOrDefault(false)) {
                 return true
             }
-            if (attempt < SERVICE_READY_RETRIES - 1) {
-                runCatching { Thread.sleep(SERVICE_READY_DELAY_MS) }
-            }
+            runCatching { Thread.sleep(SERVICE_READY_DELAY_MS) }
         }
         return false
     }
@@ -207,11 +150,11 @@ class GameRepository {
         if (packageName.isBlank()) return null
 
         val label = runCatching {
-            BlackBoxCore.getPackageManager().getApplicationLabel(info).toString()
+            VirtualCore.get().getPackageManager().getApplicationLabel(info).toString()
         }.getOrElse { packageName }
 
         val icon = runCatching {
-            BlackBoxCore.getPackageManager().getApplicationIcon(info)
+            VirtualCore.get().getPackageManager().getApplicationIcon(info)
         }.getOrNull()
 
         return AppInfo(
@@ -223,16 +166,12 @@ class GameRepository {
         )
     }
 
-    /**
-     * Icon of the target game: the copy inside the sandbox is preferred because
-     * that is what the player actually launches, the host install is the
-     * fallback so the launcher still looks right before provisioning finishes.
-     */
+    /** Icon of the target game: sandbox copy preferred, host install fallback. */
     fun gameIcon(): Drawable? = runCatching {
         val sandboxInfo = sandboxGameInfo()
         if (sandboxInfo != null) {
             runCatching {
-                BlackBoxCore.getPackageManager().getApplicationIcon(sandboxInfo)
+                VirtualCore.get().getPackageManager().getApplicationIcon(sandboxInfo)
             }.getOrNull()
         } else {
             hostGameInfo()?.let { info ->
@@ -248,7 +187,7 @@ class GameRepository {
         val sandboxInfo = sandboxGameInfo()
         if (sandboxInfo != null) {
             runCatching {
-                BlackBoxCore.getPackageManager().getApplicationLabel(sandboxInfo).toString()
+                VirtualCore.get().getPackageManager().getApplicationLabel(sandboxInfo).toString()
             }.getOrNull()
         } else {
             hostGameInfo()?.let { info ->
@@ -260,8 +199,7 @@ class GameRepository {
     }.getOrNull()?.takeIf { it.isNotBlank() } ?: GameTarget.displayName()
 
     private fun sandboxGameInfo(): ApplicationInfo? = runCatching {
-        BlackBoxCore.get().getInstalledApplications(0, GameTarget.USER_ID)
-            .firstOrNull { it.packageName == GameTarget.PACKAGE_NAME }
+        VPackageManager.get().getApplicationInfo(GameTarget.PACKAGE_NAME, 0, GameTarget.USER_ID)
     }.getOrNull()
 
     private fun hostGameInfo(): ApplicationInfo? = runCatching {

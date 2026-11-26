@@ -1,29 +1,35 @@
 # Project notes
 
 ## What this is
-- **BS-KILLER** — a single-game launcher built on the **BlackBox virtual engine** (Android app cloning / sandboxing).
-- Engine source: `github.com/Black00Z/Blacks-BlackBox`. `Bcore/`, `black-reflection/` and `compiler/` are vendored from it; `app/` is this project's own code.
+- **BS-KILLER** — a single-game launcher built on the **VirtualApp virtual engine** (Android app cloning / sandboxing).
+- Engine: `com.lody.virtual.client.core.VirtualCore` from the **VirtualApp** engine (`github.com/ServenScorpion/VirtualApp`), pulled in as a prebuilt AAR `app/sdk/lib-release.aar`. The `:Bcore` module is no longer on the build classpath (directory retained on disk, removed from `settings.gradle`).
 - The target game is hard-wired in `app/src/main/java/zyn/bs/GameTarget.kt` (`com.netease.newspike`, "Knives Out", sandbox user 0).
 
 ## Modules
-- `:app` — Kotlin launcher UI (`zyn.bs`). Launcher activity `.view.game.GameActivity`, `Application` `.app.App`.
-- `:Bcore` — engine: Java (`zyn.bs.core.BlackBoxCore`), AIDL (`Bcore/src/main/aidl`), native C++ (`Bcore/src/main/cpp`). No prebuilt `.so`; compiled from source by the NDK.
-- `:black-reflection` — annotation/reflection stubs required by `:Bcore`.
+- `:app` — Kotlin launcher UI (`zyn.bs`). Launcher activity `.view.game.GameActivity`, `Application` `.app.App`. Also hosts the native mod menu `libzyn-bs.so`.
+- `:black-reflection` — annotation/reflection stubs (retained; not required by VirtualApp).
 - `:compiler` — annotation processor for `:black-reflection`.
+- Engine wiring: `App.onCreate` calls `VirtualCore.get().startup(this, SettingConfig)` and registers `AppCallback`; `AppManager`/`BlackBoxLoader`/`GameRepository` use `VirtualCore`. **No `BlackBoxCore`.**
+
+## VirtualApp integration
+- **Lifecycle**: `VirtualCore.get().setAppCallback(AppCallback)`; `AppCallback.afterApplicationCreate(packageName, processName, application)` fires in the guest process after `callApplicationOnCreate`. **libzyn-bs is mapped there** (`ZynBs.load(packageName, USER_ID)`, guarded by `catch(Throwable)`); the host process never loads it. No `AppLifecycleCallback`/`BActivityThread`.
+- **Engine init**: `VirtualCore.startup(Context, SettingConfig)` on the main thread; `waitForEngine()` for async readiness. `SettingConfig` requires `getHostPackageName()` + `getPluginEnginePackageName()`.
+- **GMS**: **ignored** (user decision). No GMS clone; `SandboxStatus.gmsSupported=false`, `gmsInstalled=true`, `gmsError=null`, no GMS stage. VirtualApp does not have BlackBox's Google-services problem.
+- **Permissions**: **not requested in VirtualApp** (user decision); the game handles its own. `:app` still declares `RECORD_AUDIO`/`POST_NOTIFICATIONS` for the sandboxed game's uid; no runtime request from the launcher. No `MANAGE_EXTERNAL_STORAGE`.
+- **Install**: `VirtualCore.installPackageAsUser(int userId, String pkg)` (arg order differs from Bcore); APK-from-URI uses `installPackage(apkPath, InstallOptions)`. **Launch**: `VActivityManager.get().launchApp(userId, pkg)` (not on `VirtualCore`). **Uninstall**: `uninstallPackageAsUser(pkg, userId)`. **Clear data**: `cleanPackageData(pkg, userId)`. **Installed**: `isAppInstalled(pkg)` / `getPackageManager()`. **Query**: `getPackageManager().getInstalledApplications(0)`.
+- **Sandbox prefs**: VirtualApp redirects `SharedPreferences` into the game's virtual data dir; host and guest read different prefs. Share via files, not prefs.
 
 ## Launcher UI (`:app`)
 - One screen, one game, one action. Do not add an app list, app grid or multi-app selection.
 - Full-bleed wallpaper `app/src/main/assets/1795549016113.jpg`, decoded in `GameActivity` (downsampled to screen width, RGB_565), darkened by `bg_hero_scrim` + `bg_hero_vignette`.
-- GMS is cloned by `GameRepository.provision()` (game first, then Play services) but must stay **invisible**: no chip, row, icon, menu item or status line. Provisioning stages use the generic `launcher_stage_*` strings. A *failed* clone is the one exception — it surfaces through the error banner (`SandboxStatus.gmsError` → `renderNotice`), because a silent failure is indistinguishable from success until the game reports missing Play services.
-- The cloned game runs in **this app's process and uid**, so Android applies this app's permissions. `:app`'s manifest declares `RECORD_AUDIO` and `POST_NOTIFICATIONS` explicitly (a declaration in a vendored module is not enough to rely on); the runtime *request* is left to the game's own sandboxed activity, so the launcher never prompts.
-- Engine gotcha: the sandbox redirects `SharedPreferences` into the game's virtual data dir, so host and guest processes read **different** prefs files. Anything shared between them must be a file the guest can read, not prefs.
+- Provisioning clones the game only; no GMS stage. Stages use generic `launcher_stage_*` strings. A failed game import surfaces through the error banner (`SandboxStatus.message` → `renderNotice`).
 - Entry animation, breathing halos and the CTA light sweep are `ValueAnimator`/`ViewPropertyAnimator` (alpha/scale/translation only), cancelled in `onDestroy`.
 
 ## Native mod menu (`libzyn-bs`)
 - Sources in `app/src/main/cpp`; output `libzyn-bs.so` (`LOCAL_MODULE := zyn-bs`).
 - Built with **ndk-build**, driven by the archive's own `Android.mk` + `Application.mk` as the **single build description**, wired through `android.externalNativeBuild.ndkBuild` in `app/build.gradle` (top-level `android {}`, not inside `buildFeatures {}`). There is no `CMakeLists.txt` and it should not come back — two parallel build descriptions is how source lists drift. Adding a source means editing `LOCAL_SRC_FILES` in `Android.mk` only.
 - `Application.mk`'s `APP_MODULES := zyn-bs libdobby` builds only the menu plus the prebuilt Dobby static lib. `injector.cpp` ships for archive fidelity but is **not compiled** (upstream it is a separate ptrace-injector app; this sandbox does its own injecting).
-- **Exactly one load site**: `BlackBoxLoader.afterApplicationOnCreate` (guest process) → `util/ZynBs.kt` → `System.loadLibrary("zyn-bs")`, guarded by a `/proc/self/cmdline` check and `catch (Throwable)` so a bad `.so` can never stop the game. Never load from `App.onCreate` (host process), never add a second site.
+- **Exactly one load site**: `App.onCreate` registers a `VirtualApp AppCallback`; its `afterApplicationCreate` (guest process, game package only) → `util/ZynBs.kt` → `System.loadLibrary("zyn-bs")`, guarded by a `/proc/self/cmdline` check and `catch (Throwable)` so a bad `.so` can never stop the game. Never load from the host process, never add a second site.
 - Nothing crosses JNI: no `external fun`, no reliance on `JNI_OnLoad`. `main.cpp`'s `__attribute__((constructor)) void __0__()` detaches a worker thread and returns, so the game's main thread never blocks.
 - The overlay owns **no** EGL context and **no** SurfaceControl layer: `Draw()` is hooked onto `eglSwapBuffers` and paints ImGui into the game's own back buffer on the game's render thread. `g_activity` comes from the game's own `ANativeActivity_onCreate`.
 - **ImGui has one global context that can be null at any time.** `CleanupGL()` leaves the current context null, and the input hooks run on the game's own input thread. Every foreign-thread ImGui entry point must pass `nx::imguiInputSafe()` (`include/hpp/imgui/ctx_guard.h`) first — `initializeMotionEvent`, `AInputQueue_getEvent`, `TrackImGuiWindow`/`IsImGuiTouchPoint`. Never cache the context pointer.

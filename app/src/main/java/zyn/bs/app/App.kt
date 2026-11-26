@@ -4,14 +4,16 @@ import android.annotation.SuppressLint
 import android.app.Application
 import android.content.Context
 import android.util.Log
-import zyn.bs.core.BlackBoxCore
+import com.lody.virtual.client.core.AppCallback
+import com.lody.virtual.client.core.SettingConfig
+import com.lody.virtual.client.core.VirtualCore
+import zyn.bs.GameTarget
+import zyn.bs.util.ZynBs
 
 /**
- *
- * @Description:
- * @Author: alex5402
- * @CreateDate: Saturday, August 16, 2025
- *
+ * Host application: boots the VirtualApp engine, then lets [AppManager] do the
+ * one-time setup (including registering the guest-process lifecycle hook that
+ * maps libzyn-bs.so).
  */
 class App : Application() {
 
@@ -22,58 +24,54 @@ class App : Application() {
         private lateinit var mContext: Context
 
         @JvmStatic
-        fun getContext(): Context {
-            return mContext
-        }
+        fun getContext(): Context = mContext
     }
 
     override fun attachBaseContext(base: Context?) {
-        try {
-            super.attachBaseContext(base)
-
-            try {
-                BlackBoxCore.get().closeCodeInit()
-            } catch (e: Exception) {
-                Log.e("App", "Error in closeCodeInit: ${e.message}")
-            }
-
-            try {
-                BlackBoxCore.get().onBeforeMainApplicationAttach(this, base)
-            } catch (e: Exception) {
-                Log.e("App", "Error in onBeforeMainApplicationAttach: ${e.message}")
-            }
-
-            mContext = base!!
-
-            try {
-                AppManager.doAttachBaseContext(base)
-            } catch (e: Exception) {
-                Log.e("App", "Error in doAttachBaseContext: ${e.message}")
-            }
-
-            try {
-
-                BlackBoxCore.get().onAfterMainApplicationAttach(this, base)
-
-            } catch (e: Exception) {
-
-                Log.e("App", "Error in onAfterMainApplicationAttach: ${e.message}")
-
-            }
-        } catch (e: Exception) {
-            Log.e("App", "Critical error in attachBaseContext: ${e.message}")
-            if (base != null) {
-                mContext = base
-            }
-        }
+        super.attachBaseContext(base)
+        mContext = base ?: this
     }
 
     override fun onCreate() {
+        super.onCreate()
         try {
-            super.onCreate()
+            // Register the guest-process lifecycle hook BEFORE engine startup so
+            // the AppCallback is in place when the first virtual app binds.
+            VirtualCore.get().setAppCallback(object : AppCallback {
+                override fun beforeStartApplication(packageName: String?, processName: String?, context: Context?) {
+                    // no-op
+                }
+
+                override fun beforeApplicationCreate(packageName: String?, processName: String?, application: Application?) {
+                    // no-op
+                }
+
+                override fun afterApplicationCreate(packageName: String?, processName: String?, application: Application?) {
+                    val pkg = packageName ?: return
+                    try {
+                        if (application != null && pkg == GameTarget.PACKAGE_NAME) {
+                            ZynBs.load(pkg, GameTarget.USER_ID)
+                        }
+                    } catch (e: Throwable) {
+                        Log.e(TAG, "libzyn-bs load failed", e)
+                    }
+                }
+            })
+
+            VirtualCore.get().startup(this, object : SettingConfig() {
+                override fun getHostPackageName(): String = packageName
+                // 32-bit-only build: no separate 64-bit plugin engine exists.
+                // VirtualApp treats null as "no plugin engine" (PackageSetting.isRunPluginProcess).
+                override fun getPluginEnginePackageName(): String? = null
+            })
             AppManager.doOnCreate(mContext)
-        } catch (e: Exception) {
-            Log.e("App", "Error in onCreate: ${e.message}")
+        } catch (e: Throwable) {
+            // Never let engine init crash the launcher process.
+            Log.e(TAG, "Engine startup failed", e)
         }
+    }
+
+    private companion object {
+        const val TAG = "App"
     }
 }

@@ -12,15 +12,15 @@ if (keystorePropertiesFile.exists()) {
 android {
 
     namespace 'zyn.bs'
-    compileSdk rootProject.ext.compileSdkVersion
-    ndkVersion = "29.0.13846066"
+    compileSdk libs.versions.compileSdk.get().toInteger()
+    ndkVersion = libs.versions.ndkVersion.get()
 
     defaultConfig {
         applicationId "zyn.bs"
-        minSdk rootProject.ext.minSdk
-        targetSdk rootProject.ext.targetSdkVersion
-        versionCode rootProject.ext.versionCode
-        versionName rootProject.ext.versionName
+        minSdk libs.versions.minSdk.get().toInteger()
+        targetSdk libs.versions.targetSdk.get().toInteger()
+        versionCode libs.versions.versionCode.get().toInteger()
+        versionName libs.versions.versionName.get()
 
         // The UI is English-only: dropping the ~60 locales that appcompat/material
         // ship removes a few hundred KB of strings/NOTICE data from the APK.
@@ -74,8 +74,8 @@ android {
     // ndk-build module: the in-game mod menu -> libzyn-bs.so (app/src/main/cpp).
     // Android.mk/Application.mk are the single build description (the archive's
     // own), so STL, ABI, API level and the 16 KB page flag all live there.
-    // Mapped ONLY inside the game's own process — BlackBoxLoader's guest
-    // lifecycle hook calls ZynBs.load(); the host process never loads it.
+    // Mapped ONLY inside the game's own process — App's AppCallback
+    // (afterApplicationCreate) calls ZynBs.load(); the host process never loads it.
     externalNativeBuild {
         ndkBuild {
             path "src/main/cpp/Android.mk"
@@ -108,7 +108,8 @@ android {
 }
 
 dependencies {
-    implementation project(':Bcore')
+    // VirtualApp engine, prebuilt AAR resolved through flatDir in settings.gradle.
+    implementation(name: 'lib-release', ext: 'aar')
 
     implementation libs.appcompat
     implementation libs.material

@@ -3,7 +3,7 @@ apply plugin: 'com.android.library'
 android {
     namespace 'zyn.bs.core'
 
-    compileSdk rootProject.ext.compileSdkVersion
+    compileSdk libs.versions.compileSdk.get().toInteger()
 
 
     aidlPackagedList "android/app/IServiceConnection.aidl"
@@ -15,7 +15,7 @@ android {
         prefab true
     }
     defaultConfig {
-        minSdkVersion rootProject.ext.minSdk
+        minSdkVersion libs.versions.minSdk.get().toInteger()
 
         consumerProguardFiles "consumer-rules.pro"
         ndk {
@@ -35,7 +35,7 @@ android {
         ndkBuild {
             path 'src/main/cpp/Android.mk'
         }
-        ndkVersion = "29.0.13846066"
+        ndkVersion = libs.versions.ndkVersion.get()
     }
 
     // Java 17 to match the other modules and the CI toolchain (JDK 17 in

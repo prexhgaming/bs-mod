@@ -21,6 +21,10 @@ dependencyResolutionManagement {
         google()
         mavenCentral()
         maven { url "https://www.jitpack.io" }
+        // VirtualApp ships as a prebuilt AAR in app/sdk (not published anywhere).
+        flatDir {
+            dirs "$rootDir/app/sdk"
+        }
     }
 }
 
@@ -29,4 +33,3 @@ rootProject.name = "NewBlackbox"
 include ':app'
 include(":black-reflection")
 include(":compiler")
-include ':Bcore'
