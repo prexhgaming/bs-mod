@@ -1,4 +1,10 @@
-APP_ABI       := arm64-v8a armeabi-v7a
+# 32-bit only. The target game's libGame.so is armeabi-v7a, and a 64-bit process
+# can never load a 32-bit library: shipping arm64-v8a would let the sandbox pick a
+# 64-bit process that cannot map the game at all. Building just this ABI keeps the
+# APK 32-bit, so the game's process is 32-bit too.
+# (Trade-off: 64-bit-only devices, e.g. recent Pixels, cannot install this APK.
+#  Add arm64-v8a back here and in app/build.gradle's abiFilters if that matters.)
+APP_ABI       := armeabi-v7a
 APP_STL       := c++_static
 
 # Only the mod menu is built. The `injector` module defined in Android.mk is
@@ -27,9 +33,8 @@ APP_SUPPORT_FLEXIBLE_PAGE_SIZES := true
 APP_CPPFLAGS  += -D__BIONIC_NO_PAGE_SIZE_MACRO
 APP_CFLAGS    += -D__BIONIC_NO_PAGE_SIZE_MACRO
 
-# ==================== 32 + 64 BIT ====================
-# Both ABIs build from the same sources:
-#   arm64-v8a  -> Dobby/libraries/arm64-v8a/libdobby.a
-#   armeabi-v7a-> Dobby/libraries/armeabi-v7a/libdobby.a
-# AndInlineHook/AndInlineHook.h picks the right one at compile time, so hook
-# call sites are identical on 32-bit and 64-bit.
+# ==================== 32-BIT TARGET ====================
+# Only armeabi-v7a is built (see Application.mk for the reasoning): the game is a
+# 32-bit library and a 64-bit process cannot load it. pyscan.h handles the
+# Thumb-2 decoding for this ABI; the A64 path is kept for a future 64-bit build.
+# If arm64-v8a is re-enabled, restore it in APP_ABI as well.

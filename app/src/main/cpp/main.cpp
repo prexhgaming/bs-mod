@@ -30,6 +30,7 @@ return strstr(buf,"newspikeme") ? "com.netease.newspikeme" : "com.netease.newspi
 #include "KittyMemory/MemoryPatch.h"
 #include "KittyMemory/KittyScanner.h"
 #include "KittyMemory/KittyUtils.h"
+#include "include/hpp/pyscan.h"
 #include "xhook/xhook.h"
 #include "include/hpp/srcpy.h"
 #include "NetworkBlocker.hpp"
@@ -98,8 +99,26 @@ static int my_connect(int sockfd, const struct sockaddr* addr, socklen_t addrlen
 static bool (*_hook_bypass)(void*) = nullptr;
 static bool hook_bypass(void*) { return false; }
 
+// Manual escape hatch: set to a known libGame.so offset to bypass the runtime
+// scan. 0 = always scan, never guess.
+static constexpr uintptr_t kNexoraPyRunOffset = 0;
+
 static int iLoaded = 0, iLoadAt = 2;
+static std::atomic<int> g_pyBadCalls{0};
+static std::atomic<int> g_pyValidCalls{0};
+
 DEFINES(void*, iMissMyWife, const char* v0, int v1, void* v2, void* v3, void* v4) {
+    // Self-check. Only PyRun_StringFlags receives a start code in w1
+    // (256 single / 257 file / 258 eval) plus a source string in x0. If we never
+    // see that, the scan picked the wrong address and you should be told so
+    // instead of wondering why nothing happens.
+    if (v0 && v1 >= 256 && v1 <= 258) {
+        if (g_pyValidCalls.fetch_add(1) == 0)
+            NX_LOGI("hook confirmed: start=%d src=%.80s", v1, v0);
+    } else if (g_pyBadCalls.fetch_add(1) == 63 && g_pyValidCalls.load() == 0) {
+        NX_LOGE("hook target looks WRONG: 64 calls, none with a valid start code");
+    }
+
     static bool loaded = false;
     if (v1 == 257) {
         iLoaded++;
@@ -109,6 +128,31 @@ DEFINES(void*, iMissMyWife, const char* v0, int v1, void* v2, void* v3, void* v4
         }
     }
     return _iMissMyWife(v0, v1, v2, v3, v4);
+}
+
+// Runs off the render path: the scan walks the whole .text of libGame.so, which
+// must not hold up the overlay. The game keeps running scripts, so hooking a
+// second late still catches every later call.
+static void* py_hook_thread(void* arg) {
+    const uintptr_t libGameBase = (uintptr_t)arg;
+
+    // No hardcoded offset: the game is obfuscated and statically links CPython, so
+    // libGameBase + N moves with every build. Locate PyRun_StringFlags by structure.
+    uintptr_t pyRun = nx::findPyRunStringFlags("libGame.so");
+    if (!pyRun && kNexoraPyRunOffset != 0) {
+        pyRun = libGameBase + kNexoraPyRunOffset;
+        NX_LOGI("scan failed, using manual offset +0x%llx -> %p",
+                (unsigned long long)kNexoraPyRunOffset, (void*)pyRun);
+    }
+    if (pyRun) {
+        HOOKI(pyRun, iMissMyWife);
+        AddNotification("PY HOOK OK", 140, 220, 120, 2.f);
+    } else {
+        // Never hook a guess: entering an arbitrary function with the PyRun
+        // signature is a guaranteed crash. Report and keep the rest working.
+        AddNotification("PY HOOK NOT FOUND", 230, 90, 90, 3.f);
+    }
+    return nullptr;
 }
 
 #include "draw.h"
@@ -154,13 +198,16 @@ void* bypass_thread(void*) {
     xhook_register(".*\\.so$", "gethostbyname", (void*)NetworkBlocker::gethostbyname_hooked, (void**)&orig_getaddrinfo);
     xhook_register(".*\\.so$", "connect", (void*)my_connect, (void**)&original_connect);
     xhook_refresh(0);
-    HOOKI((ptr)libGameBase + 0x3e832a8, iMissMyWife);
 
     menu_visible = true;
     AddNotification("✅ NEXORA READY!", 140, 89, 242, 2.f);
 
     IMGUI();
     __INPUT__();
+
+    pthread_t pyThread;
+    if (pthread_create(&pyThread, nullptr, py_hook_thread, (void*)libGameBase) == 0)
+        pthread_detach(pyThread);
     return nullptr;
 }
 
