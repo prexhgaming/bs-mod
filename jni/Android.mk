@@ -10,17 +10,6 @@ LOCAL_SRC_FILES := Dobby/libraries/$(TARGET_ARCH_ABI)/libdobby.a
 include $(PREBUILT_STATIC_LIBRARY)
 
 # ============================================================
-# INJECTOR LIBRARY
-# ============================================================
-include $(CLEAR_VARS)
-LOCAL_MODULE := injector
-LOCAL_SRC_FILES := injector.cpp
-LOCAL_LDLIBS := -llog -ldl -lz -landroid
-LOCAL_CPPFLAGS := -std=c++17 -O2 -Wall -fvisibility=hidden -fPIC
-LOCAL_C_INCLUDES := $(LOCAL_PATH)
-include $(BUILD_SHARED_LIBRARY)
-
-# ============================================================
 # MAIN MODULE
 # ============================================================
 include $(CLEAR_VARS)

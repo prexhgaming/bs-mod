@@ -14,26 +14,32 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install NDK
-        run: |
-          curl -sSL -o ndk.zip https://dl.google.com/android/repository/android-ndk-r27c-linux.zip
-          unzip -q ndk.zip -d $HOME/android-ndk
-          echo "ANDROID_NDK_ROOT=$HOME/android-ndk/android-ndk-r27c" >> $GITHUB_ENV
+      - name: Setup Android NDK
+        id: setup-ndk
+        uses: nttld/setup-ndk@v1
+        with:
+          ndk-version: r27d
+          local-cache: true
 
       - name: Build native library with ndk-build
+        working-directory: jni
         run: |
-          cd "$GITHUB_WORKSPACE"
-          "$ANDROID_NDK_ROOT/ndk-build" -j4
+          "$NDK_PATH/ndk-build" -j$(nproc) \
+            NDK_PROJECT_PATH=. \
+            NDK_APPLICATION_MK=./Application.mk \
+            APP_BUILD_SCRIPT=./Android.mk
+        env:
+          NDK_PATH: ${{ steps.setup-ndk.outputs.ndk-path }}
 
       - name: List build output
-        run: find "$GITHUB_WORKSPACE/libs" -type f -name '*.so' -exec ls -lh {} \;
+        run: find "$GITHUB_WORKSPACE/jni/libs" -type f -name '*.so' -exec ls -lh {} \;
 
       - name: Create zip of built library
         id: zip
         run: |
           cd "$GITHUB_WORKSPACE"
           mkdir -p artifacts
-          zip -j artifacts/libzyn-bs.zip libs/armeabi-v7a/libzyn-bs.so
+          zip -j artifacts/libzyn-bs.zip jni/libs/armeabi-v7a/libzyn-bs.so
           echo "zip_path=artifacts/libzyn-bs.zip" >> $GITHUB_OUTPUT
           ls -lh artifacts/libzyn-bs.zip
 
