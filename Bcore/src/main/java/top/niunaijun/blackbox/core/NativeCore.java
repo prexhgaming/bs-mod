@@ -38,16 +38,6 @@ public class NativeCore {
     
     public static native boolean disableResourceLoading();
 
-    public static native void setDeviceSpoof(
-            String manufacturer,
-            String brand,
-            String model,
-            String device,
-            String product,
-            String fingerprint,
-            String serial
-    );
-
 
     @Keep
     public static int getCallingUid(int origCallingUid) {

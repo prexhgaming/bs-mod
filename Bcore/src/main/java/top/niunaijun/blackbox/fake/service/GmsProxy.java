@@ -7,24 +7,14 @@ import java.lang.reflect.Method;
 
 import black.android.os.BRServiceManager;
 import top.niunaijun.blackbox.BlackBoxCore;
-import top.niunaijun.blackbox.app.BActivityThread;
 import top.niunaijun.blackbox.fake.hook.BinderInvocationStub;
 import top.niunaijun.blackbox.fake.hook.MethodHook;
 import top.niunaijun.blackbox.fake.hook.ProxyMethod;
-import top.niunaijun.blackbox.utils.MethodParameterUtils;
 import top.niunaijun.blackbox.utils.Slog;
 
 
 public class GmsProxy extends BinderInvocationStub {
     public static final String TAG = "GmsProxy";
-
-    private static boolean isGmsEnabledForCurrentUser() {
-        try {
-            return BlackBoxCore.get().isInstallGms(BActivityThread.getUserId());
-        } catch (Throwable ignored) {
-            return false;
-        }
-    }
 
     public GmsProxy() {
         super(BRServiceManager.get().getService("gms"));
@@ -69,27 +59,20 @@ public class GmsProxy extends BinderInvocationStub {
     public static class GetService extends MethodHook {
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
-            boolean gmsEnabled = isGmsEnabledForCurrentUser();
             try {
-                if (gmsEnabled && args != null) {
-                    String replaced = MethodParameterUtils.replaceFirstAppPkg(args);
-                    if (replaced != null) {
-                        Slog.d(TAG, "GmsProxy: Fixed calling package from " + replaced + " to " + BlackBoxCore.getHostPkg());
-                    }
-                    if (args.length > 0 && args[0] instanceof String) {
-                        String callingPackage = (String) args[0];
-                        if ("com.google.android.gms".equals(callingPackage)) {
-                            args[0] = BlackBoxCore.getHostPkg();
-                            Slog.d(TAG, "GmsProxy: Fixed calling package from com.google.android.gms to " + BlackBoxCore.getHostPkg());
-                        }
+                
+                if (args != null && args.length > 0) {
+                    String callingPackage = (String) args[0];
+                    if ("com.google.android.gms".equals(callingPackage)) {
+                        
+                        args[0] = BlackBoxCore.getHostPkg();
+                        Slog.d(TAG, "GmsProxy: Fixed calling package from com.google.android.gms to " + BlackBoxCore.getHostPkg());
                     }
                 }
                 return method.invoke(who, args);
             } catch (Exception e) {
                 Slog.e(TAG, "GmsProxy: Error in getService", e);
-                if (!gmsEnabled) {
-                    return null;
-                }
+                
                 return null;
             }
         }
@@ -115,14 +98,10 @@ public class GmsProxy extends BinderInvocationStub {
     public static class Authenticate extends MethodHook {
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
-            boolean gmsEnabled = isGmsEnabledForCurrentUser();
             try {
                 Slog.d(TAG, "GmsProxy: Handling authenticate call");
                 return method.invoke(who, args);
             } catch (Exception e) {
-                if (!gmsEnabled) {
-                    return null;
-                }
                 Slog.w(TAG, "GmsProxy: Authentication error, returning success", e);
                 
                 return createMockAuthResult();
@@ -150,14 +129,10 @@ public class GmsProxy extends BinderInvocationStub {
     public static class GetToken extends MethodHook {
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
-            boolean gmsEnabled = isGmsEnabledForCurrentUser();
             try {
                 Slog.d(TAG, "GmsProxy: Handling getToken call");
                 return method.invoke(who, args);
             } catch (Exception e) {
-                if (!gmsEnabled) {
-                    return null;
-                }
                 Slog.w(TAG, "GmsProxy: GetToken error, returning mock token", e);
                 return "mock_gms_token_" + System.currentTimeMillis();
             }

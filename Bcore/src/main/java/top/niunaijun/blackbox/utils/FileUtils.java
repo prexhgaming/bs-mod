@@ -17,8 +17,8 @@ import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.OutputStream;
 import java.io.RandomAccessFile;
+import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.channels.Channels;
 import java.nio.channels.FileChannel;
@@ -26,60 +26,56 @@ import java.nio.channels.ReadableByteChannel;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
-public class BzFileUtils {
-
-    private static final int IO_BUFFER_SIZE = 8192;
+public class FileUtils {
 
     public static int count(File file) {
-        if (file == null || !file.exists()) {
+        if (!file.exists()) {
             return -1;
         }
         if (file.isFile()) {
             return 1;
         }
-        if (!file.isDirectory()) {
-            return 0;
+        if (file.isDirectory()) {
+            String[] fs = file.list();
+            return fs == null ? 0 : fs.length;
         }
-        String[] children = file.list();
-        return children == null ? 0 : children.length;
+        return 0;
     }
 
     public static String getFilenameExt(String filename) {
-        if (filename == null) {
+        int dotPos = filename.lastIndexOf('.');
+        if (dotPos == -1) {
             return "";
         }
-        int dotPos = filename.lastIndexOf('.');
-        return dotPos < 0 ? "" : filename.substring(dotPos + 1);
+        return filename.substring(dotPos + 1);
     }
 
     public static File changeExt(File f, String targetExt) {
-        if (f == null) {
-            return null;
+        String outPath = f.getAbsolutePath();
+        if (!getFilenameExt(outPath).equals(targetExt)) {
+            int dotPos = outPath.lastIndexOf(".");
+            if (dotPos > 0) {
+                outPath = outPath.substring(0, dotPos + 1) + targetExt;
+            } else {
+                outPath = outPath + "." + targetExt;
+            }
+            return new File(outPath);
         }
-        String path = f.getAbsolutePath();
-        String ext = getFilenameExt(path);
-        if (targetExt != null && targetExt.equals(ext)) {
-            return f;
-        }
-
-        int lastDot = path.lastIndexOf('.');
-        String base = lastDot > 0 ? path.substring(0, lastDot) : path;
-        String outPath = (targetExt == null || targetExt.isEmpty())
-                ? base
-                : base + "." + targetExt;
-        return new File(outPath);
+        return f;
     }
 
     public static boolean renameTo(File origFile, File newFile) {
-        return origFile != null && newFile != null && origFile.renameTo(newFile);
+        return origFile.renameTo(newFile);
     }
 
     public static String readToString(String fileName) throws IOException {
-        try (InputStream input = new FileInputStream(fileName);
-             ByteArrayOutputStream out = new ByteArrayOutputStream()) {
-            pump(input, out);
-            return out.toString();
+        InputStream is = new FileInputStream(fileName);
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        int i;
+        while ((i = is.read()) != -1) {
+            baos.write(i);
         }
+        return baos.toString();
     }
 
     public static Parcel readToParcel(File file) throws IOException {
@@ -136,9 +132,9 @@ public class BzFileUtils {
     }
 
     public static void writeParcelToFile(Parcel p, File file) throws IOException {
-        try (FileOutputStream fos = new FileOutputStream(file)) {
-            fos.write(p.marshall());
-        }
+        FileOutputStream fos = new FileOutputStream(file);
+        fos.write(p.marshall());
+        fos.close();
     }
 
     public static void writeParcelToOutput(Parcel p, FileOutputStream fos) throws IOException {
@@ -146,36 +142,44 @@ public class BzFileUtils {
     }
 
     public static byte[] toByteArray(File file) throws IOException {
-        try (FileInputStream in = new FileInputStream(file)) {
-            return toByteArray(in);
+        FileInputStream fileInputStream = new FileInputStream(file);
+        try {
+            return toByteArray(fileInputStream);
+        } finally {
+            closeQuietly(fileInputStream);
         }
     }
 
     public static byte[] toByteArray(InputStream inStream) throws IOException {
-        ByteArrayOutputStream out = new ByteArrayOutputStream();
-        pump(inStream, out);
-        return out.toByteArray();
+        ByteArrayOutputStream swapStream = new ByteArrayOutputStream();
+        byte[] buff = new byte[100];
+        int rc;
+        while ((rc = inStream.read(buff, 0, 100)) > 0) {
+            swapStream.write(buff, 0, rc);
+        }
+        return swapStream.toByteArray();
     }
 
     public static int deleteDir(File dir) {
-        if (dir == null || !dir.exists()) {
-            return 0;
-        }
-
-        int deleted = 0;
-        if (dir.isDirectory() && !isDirectorySymlinkQuietly(dir)) {
-            File[] files = dir.listFiles();
-            if (files != null) {
-                for (File child : files) {
-                    deleted += deleteDir(child);
+        int count = 0;
+        if (dir.isDirectory()) {
+            boolean link = false;
+            try {
+                link = isSymlink(dir);
+            } catch (Exception e) {
+                
+            }
+            if (!link) {
+                String[] children = dir.list();
+                for (String file : children) {
+                    count += deleteDir(new File(dir, file));
                 }
             }
         }
-
         if (dir.delete()) {
-            deleted++;
+            count++;
         }
-        return deleted;
+        return count;
     }
 
     public static int deleteDir(String dir) {
@@ -183,52 +187,78 @@ public class BzFileUtils {
     }
 
     public static void writeToFile(InputStream dataIns, File target) throws IOException {
-        try (BufferedOutputStream output = new BufferedOutputStream(new FileOutputStream(target))) {
-            pump(dataIns, output);
+        final int BUFFER = 1024;
+        BufferedOutputStream bos = new BufferedOutputStream(new FileOutputStream(target));
+        int count;
+        byte data[] = new byte[BUFFER];
+        while ((count = dataIns.read(data, 0, BUFFER)) != -1) {
+            bos.write(data, 0, count);
         }
+        bos.close();
     }
 
     public static void writeToFile(byte[] data, File target) throws IOException {
-        try (ReadableByteChannel src = Channels.newChannel(new ByteArrayInputStream(data));
-             FileOutputStream fo = new FileOutputStream(target);
-             FileChannel out = fo.getChannel()) {
-            long transferred = 0L;
-            while (transferred < data.length) {
-                transferred += out.transferFrom(src, transferred, data.length - transferred);
+        FileOutputStream fo = null;
+        ReadableByteChannel src = null;
+        FileChannel out = null;
+        try {
+            src = Channels.newChannel(new ByteArrayInputStream(data));
+            fo = new FileOutputStream(target);
+            out = fo.getChannel();
+            out.transferFrom(src, 0, data.length);
+        } finally {
+            if (fo != null) {
+                fo.close();
+            }
+            if (src != null) {
+                src.close();
+            }
+            if (out != null) {
+                out.close();
             }
         }
     }
 
     public static void copyFile(InputStream inputStream, File target) {
-        if (inputStream == null || target == null) {
-            return;
-        }
-        try (OutputStream output = new FileOutputStream(target)) {
-            pump(inputStream, output);
-            output.flush();
-        } catch (Throwable ignored) {
+        FileOutputStream outputStream = null;
+        try {
+            outputStream = new FileOutputStream(target);
+            byte[] data = new byte[4096];
+            int len;
+            while ((len = inputStream.read(data)) != -1) {
+                outputStream.write(data, 0, len);
+            }
+            outputStream.flush();
+        } catch (Throwable e) {
+            
         } finally {
             closeQuietly(inputStream);
+            closeQuietly(outputStream);
         }
     }
 
     public static void copyFile(File source, File target) throws IOException {
-        if (source == null || target == null) {
-            return;
-        }
-        try (FileInputStream in = new FileInputStream(source);
-             FileOutputStream out = new FileOutputStream(target);
-             FileChannel src = in.getChannel();
-             FileChannel dst = out.getChannel()) {
-            long size = src.size();
-            long pos = 0L;
-            while (pos < size) {
-                long copied = src.transferTo(pos, size - pos, dst);
-                if (copied <= 0) {
+        FileInputStream inputStream = null;
+        FileOutputStream outputStream = null;
+        try {
+            inputStream = new FileInputStream(source);
+            outputStream = new FileOutputStream(target);
+            FileChannel iChannel = inputStream.getChannel();
+            FileChannel oChannel = outputStream.getChannel();
+
+            ByteBuffer buffer = ByteBuffer.allocate(1024);
+            while (true) {
+                buffer.clear();
+                int r = iChannel.read(buffer);
+                if (r == -1)
                     break;
-                }
-                pos += copied;
+                buffer.limit(buffer.position());
+                buffer.position(0);
+                oChannel.write(buffer);
             }
+        } finally {
+            closeQuietly(inputStream);
+            closeQuietly(outputStream);
         }
     }
 
@@ -255,22 +285,6 @@ public class BzFileUtils {
         }
 
         return v0;
-    }
-
-    private static void pump(InputStream in, OutputStream out) throws IOException {
-        byte[] buffer = new byte[IO_BUFFER_SIZE];
-        int read;
-        while ((read = in.read(buffer)) != -1) {
-            out.write(buffer, 0, read);
-        }
-    }
-
-    private static boolean isDirectorySymlinkQuietly(File dir) {
-        try {
-            return isSymlink(dir);
-        } catch (Throwable ignored) {
-            return false;
-        }
     }
 
     private static boolean isValidExtFilenameChar(char c) {
@@ -306,9 +320,8 @@ public class BzFileUtils {
     }
 
     public static void mkdirs(File path) {
-        if (path != null && !path.exists()) {
+        if (!path.exists())
             path.mkdirs();
-        }
     }
 
     public static void mkdirs(String path) {
@@ -345,7 +358,7 @@ public class BzFileUtils {
     
     public static class FileLock {
         private static FileLock singleton;
-        private final Map<String, FileLockCount> refCounts = new ConcurrentHashMap<String, FileLockCount>();
+        private Map<String, FileLockCount> mRefCountMap = new ConcurrentHashMap<String, FileLockCount>();
 
         public static FileLock getInstance() {
             if (singleton == null) {
@@ -354,28 +367,34 @@ public class BzFileUtils {
             return singleton;
         }
 
-        private int incRef(String filePath, java.nio.channels.FileLock fileLock, RandomAccessFile raf, FileChannel channel) {
-            FileLockCount existing = refCounts.get(filePath);
-            if (existing != null) {
-                int prev = existing.mRefCount;
-                existing.mRefCount = prev + 1;
-                return prev;
+        private int RefCntInc(String filePath, java.nio.channels.FileLock fileLock, RandomAccessFile randomAccessFile,
+                              FileChannel fileChannel) {
+            int refCount;
+            if (this.mRefCountMap.containsKey(filePath)) {
+                FileLockCount fileLockCount = this.mRefCountMap.get(filePath);
+                int i = fileLockCount.mRefCount;
+                fileLockCount.mRefCount = i + 1;
+                refCount = i;
+            } else {
+                refCount = 1;
+                this.mRefCountMap.put(filePath, new FileLockCount(fileLock, refCount, randomAccessFile, fileChannel));
+
             }
-            refCounts.put(filePath, new FileLockCount(fileLock, 1, raf, channel));
-            return 1;
+            return refCount;
         }
 
-        private int decRef(String filePath) {
-            FileLockCount existing = refCounts.get(filePath);
-            if (existing == null) {
-                return 0;
+        private int RefCntDec(String filePath) {
+            int refCount = 0;
+            if (this.mRefCountMap.containsKey(filePath)) {
+                FileLockCount fileLockCount = this.mRefCountMap.get(filePath);
+                int i = fileLockCount.mRefCount - 1;
+                fileLockCount.mRefCount = i;
+                refCount = i;
+                if (refCount <= 0) {
+                    this.mRefCountMap.remove(filePath);
+                }
             }
-            int next = existing.mRefCount - 1;
-            existing.mRefCount = next;
-            if (next <= 0) {
-                refCounts.remove(filePath);
-            }
-            return next;
+            return refCount;
         }
 
         public boolean LockExclusive(File targetFile) {
@@ -394,7 +413,7 @@ public class BzFileUtils {
                 if (!lock.isValid()) {
                     return false;
                 }
-                incRef(lockFile.getAbsolutePath(), lock, randomAccessFile, channel);
+                RefCntInc(lockFile.getAbsolutePath(), lock, randomAccessFile, channel);
                 return true;
             } catch (Exception e) {
                 return false;
@@ -408,14 +427,14 @@ public class BzFileUtils {
             if (!lockFile.exists()) {
                 return;
             }
-            if (this.refCounts.containsKey(lockFile.getAbsolutePath())) {
-                FileLockCount fileLockCount = this.refCounts.get(lockFile.getAbsolutePath());
+            if (this.mRefCountMap.containsKey(lockFile.getAbsolutePath())) {
+                FileLockCount fileLockCount = this.mRefCountMap.get(lockFile.getAbsolutePath());
                 if (fileLockCount != null) {
                     java.nio.channels.FileLock fileLock = fileLockCount.mFileLock;
                     RandomAccessFile randomAccessFile = fileLockCount.fOs;
                     FileChannel fileChannel = fileLockCount.fChannel;
                     try {
-                        if (decRef(lockFile.getAbsolutePath()) <= 0) {
+                        if (RefCntDec(lockFile.getAbsolutePath()) <= 0) {
                             if (fileLock != null && fileLock.isValid()) {
                                 fileLock.release();
                             }

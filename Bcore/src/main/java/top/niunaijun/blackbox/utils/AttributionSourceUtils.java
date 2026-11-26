@@ -8,17 +8,6 @@ import top.niunaijun.blackbox.utils.Slog;
 public class AttributionSourceUtils {
     private static final String TAG = "AttributionSourceUtils";
 
-    private static String getAttributionPackageName() {
-        try {
-            String appPackageName = BActivityThread.getAppPackageName();
-            if (appPackageName != null && !appPackageName.isEmpty()) {
-                return appPackageName;
-            }
-        } catch (Throwable ignored) {
-        }
-        return BlackBoxCore.getHostPkg();
-    }
-
     
     public static void fixAttributionSourceInArgs(Object[] args) {
         if (args == null) return;
@@ -87,7 +76,7 @@ public class AttributionSourceUtils {
                 try {
                     java.lang.reflect.Field packageField = attributionSourceClass.getDeclaredField(fieldName);
                     packageField.setAccessible(true);
-                    packageField.set(attributionSource, getAttributionPackageName());
+                    packageField.set(attributionSource, BlackBoxCore.getHostPkg());
                     Slog.d(TAG, "Fixed AttributionSource package name via field: " + fieldName);
                     break;
                 } catch (NoSuchFieldException e) {
@@ -140,7 +129,7 @@ public class AttributionSourceUtils {
                 
                 java.lang.reflect.Constructor<?> constructor = attributionSourceClass.getDeclaredConstructor(int.class, String.class);
                 constructor.setAccessible(true);
-                attributionSource = constructor.newInstance(BlackBoxCore.getHostUid(), getAttributionPackageName());
+                attributionSource = constructor.newInstance(BlackBoxCore.getHostUid(), BlackBoxCore.getHostPkg());
             } catch (Exception e) {
                 try {
                     

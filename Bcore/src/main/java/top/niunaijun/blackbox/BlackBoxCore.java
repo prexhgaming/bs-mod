@@ -31,6 +31,7 @@ import java.util.Map;
 
 
 import black.android.app.BRActivityThread;
+import black.android.os.BRUserHandle;
 import me.weishu.reflection.Reflection;
 import top.niunaijun.blackbox.app.BActivityThread;
 import top.niunaijun.blackbox.app.LauncherActivity;
@@ -55,7 +56,7 @@ import top.niunaijun.blackbox.fake.frameworks.BUserManager;
 
 import top.niunaijun.blackbox.fake.hook.HookManager;
 import top.niunaijun.blackbox.proxy.ProxyManifest;
-import top.niunaijun.blackbox.utils.BzFileUtils;
+import top.niunaijun.blackbox.utils.FileUtils;
 import top.niunaijun.blackbox.utils.ShellUtils;
 import top.niunaijun.blackbox.utils.Slog;
 import top.niunaijun.blackbox.utils.SimpleCrashFix;
@@ -77,8 +78,6 @@ import top.niunaijun.blackbox.utils.LogSender;
 @SuppressWarnings({"unchecked", "deprecation"})
 public class BlackBoxCore extends ClientConfiguration {
     public static final String TAG = "BlackBoxCore";
-
-    private static final int ANDROID_UID_PER_USER_RANGE = 100000;
 
     private static final BlackBoxCore sBlackBoxCore = new BlackBoxCore();
     private static Context sContext;
@@ -115,7 +114,7 @@ public class BlackBoxCore extends ClientConfiguration {
     private final List<AppLifecycleCallback> mAppLifecycleCallbacks = new ArrayList<>();
     private final Handler mHandler = new Handler(Looper.getMainLooper());
     private final int mHostUid = Process.myUid();
-    private final int mHostUserId = mHostUid / ANDROID_UID_PER_USER_RANGE;
+    private final int mHostUserId = BRUserHandle.get().myUserId();
 
     private boolean mServicesInitialized = false;
     private long mLastServiceInitAttempt = 0;
@@ -129,7 +128,6 @@ public class BlackBoxCore extends ClientConfiguration {
     private int mCurrentAppUid = -1;
     private String mCurrentAppPackage = null;
     private boolean mIsSandboxedEnvironment = false;
-    private String mProcessName;
 
     public static BlackBoxCore get() {
         return sBlackBoxCore;
@@ -833,11 +831,33 @@ public class BlackBoxCore extends ClientConfiguration {
 
     public void doAttachBaseContext(Context context,
                                    ClientConfiguration clientConfiguration) {
+        try {
+            
+            setEssentialProperties(context, clientConfiguration);
+            
+            
+            try {
+                Class<?> windowManagerClass = Class.forName("android.view.WindowManager");
+                Field ignoreLeaksField = windowManagerClass.getDeclaredField("mIgnoreWindowLeaks");
+                ignoreLeaksField.setAccessible(true);
+                
+            } catch (Exception e) {
+                Slog.w(TAG, "Could not access WindowManager leak field: " + e.getMessage());
+            }
+            
+        } catch (Exception e) {
+            Slog.w(TAG, "Failed to set essential properties: " + e.getMessage());
+        }
+
         sContext = context;
         mClientConfiguration = clientConfiguration;
+        
+        
+        installSystemHooks();
+        
+        initNotificationManager();
 
-        final String processName = getProcessName(context);
-        mProcessName = processName;
+        String processName = getProcessName(getContext());
         if (processName.equals(BlackBoxCore.getHostPkg())) {
             mProcessType = ProcessType.Main;
             startLogcat();
@@ -846,31 +866,6 @@ public class BlackBoxCore extends ClientConfiguration {
         } else {
             mProcessType = ProcessType.BAppClient;
         }
-
-        Slog.i(TAG, "Process detected: name=" + processName + ", hostPkg=" + BlackBoxCore.getHostPkg() + ", type=" + mProcessType);
-
-        try {
-            setEssentialProperties(context, clientConfiguration, mProcessType == ProcessType.Main);
-
-            if (mProcessType == ProcessType.Main) {
-                Slog.i(TAG, "Main process: skipped native blackbox resource/hideapi hooks");
-            }
-
-            try {
-                Class<?> windowManagerClass = Class.forName("android.view.WindowManager");
-                Field ignoreLeaksField = windowManagerClass.getDeclaredField("mIgnoreWindowLeaks");
-                ignoreLeaksField.setAccessible(true);
-
-            } catch (Exception e) {
-                Slog.w(TAG, "Could not access WindowManager leak field: " + e.getMessage());
-            }
-
-        } catch (Exception e) {
-            Slog.w(TAG, "Failed to set essential properties: " + e.getMessage());
-        }
-
-        installSystemHooks();
-        initNotificationManager();
         if (BlackBoxCore.get().isBlackProcess()) {
             BEnvironment.load();
             if (processName.endsWith("p0")) {
@@ -1229,10 +1224,6 @@ public class BlackBoxCore extends ClientConfiguration {
         return GmsCore.isInstalledGoogleService(userId);
     }
 
-    public boolean hasGmsTraces(int userId) {
-        return GmsCore.hasGmsTraces(userId);
-    }
-
     public InstallResult installGms(int userId) {
         return GmsCore.installGApps(userId);
     }
@@ -1240,11 +1231,6 @@ public class BlackBoxCore extends ClientConfiguration {
     public boolean uninstallGms(int userId) {
         GmsCore.uninstallGApps(userId);
         return !GmsCore.isInstalledGoogleService(userId);
-    }
-
-    public boolean wipeGms(int userId) {
-        GmsCore.wipeGApps(userId);
-        return !GmsCore.hasGmsTraces(userId);
     }
 
     
@@ -1330,7 +1316,7 @@ public class BlackBoxCore extends ClientConfiguration {
                         docuentsdir.mkdirs();
                     }
                     logFile = new File(docuentsdir, fileName);
-                    BzFileUtils.deleteDir(logFile);
+                    FileUtils.deleteDir(logFile);
                     ShellUtils.execCommand("logcat -c", false);
                     ShellUtils.execCommand("logcat -f " + logFile.getAbsolutePath(), false);
                 }
@@ -1653,33 +1639,23 @@ public class BlackBoxCore extends ClientConfiguration {
     }
     
     
-    private void setEssentialProperties(Context context, ClientConfiguration clientConfiguration, boolean isHostMainProcess) {
+    private void setEssentialProperties(Context context, ClientConfiguration clientConfiguration) {
         if (clientConfiguration == null) {
             throw new IllegalArgumentException("ClientConfiguration is null!");
         }
 
-        // Avoid loading the native "blackbox" library in the host main/UI process.
-        // On some devices this can destabilize rendering (Surface/GraphicBuffer/EGL).
-        if (isHostMainProcess) {
+        if(!NativeCore.disableHiddenApi()){
             try {
                 Reflection.unseal(context);
             } catch (Throwable t) {
                 Slog.w(TAG, "Reflection.unseal failed: " + t.getMessage());
             }
-        } else {
-            if (!NativeCore.disableHiddenApi()) {
-                try {
-                    Reflection.unseal(context);
-                } catch (Throwable t) {
-                    Slog.w(TAG, "Reflection.unseal failed: " + t.getMessage());
-                }
-            }
+        }
 
-            try {
-                NativeCore.disableResourceLoading();
-            } catch (Exception e) {
-                Slog.w(TAG, "Failed to call native resource disabling: " + e.getMessage());
-            }
+        try {
+            NativeCore.disableResourceLoading();
+        } catch (Exception e) {
+            Slog.w(TAG, "Failed to call native resource disabling: " + e.getMessage());
         }
         
         
@@ -1709,22 +1685,6 @@ public class BlackBoxCore extends ClientConfiguration {
             
             if (mClientConfiguration == null || !mClientConfiguration.isUseVpnNetwork()) {
                 Slog.d(TAG, "VPN network mode disabled, using normal network");
-                return;
-            }
-
-            // Safety: the current ProxyVpnService implementation does not implement packet
-            // forwarding (TUN read/write + TCP/UDP handling). On modern Android (including API 36),
-            // establishing a VPN with a default route will black-hole the app’s traffic.
-            // Until a real tunnel implementation exists, skip starting the VPN to preserve
-            // normal internet connectivity.
-            if (Build.VERSION.SDK_INT >= 34) {
-                Slog.w(TAG, "VPN network mode requested but disabled on this Android version (stub VPN would break connectivity). Falling back to normal network.");
-                try {
-                    // Best-effort: stop any previously started instance after upgrade.
-                    Intent stopIntent = new Intent(getContext(), top.niunaijun.blackbox.proxy.ProxyVpnService.class);
-                    getContext().stopService(stopIntent);
-                } catch (Throwable ignored) {
-                }
                 return;
             }
             
@@ -1761,14 +1721,6 @@ public class BlackBoxCore extends ClientConfiguration {
     
     private static void ensureProperInitialization() {
         try {
-            // Keep the host main/UI process as “clean” as possible: no native init or
-            // ActivityThread hooking. These are intended for virtualized app/server processes
-            // and may destabilize rendering on some OEM builds.
-            if (BlackBoxCore.get().isMainProcess()) {
-                Slog.d(TAG, "Main process detected; skipping NativeCore/BActivityThread initialization");
-                return;
-            }
-
             
             Slog.d(TAG, "Ensuring proper initialization order...");
             

@@ -39,8 +39,8 @@ android {
     }
 
     compileOptions {
-        sourceCompatibility JavaVersion.VERSION_17
-        targetCompatibility JavaVersion.VERSION_17
+        sourceCompatibility JavaVersion.VERSION_21
+        targetCompatibility JavaVersion.VERSION_21
     }
     
     
@@ -69,6 +69,25 @@ android {
     }
 }
 
+
+// Strip the AIDL-generated "Using: ..." comment line which contains backslash sequences
+// that Java's compiler mis-parses as Unicode escapes on Windows paths.
+tasks.matching { it.name.startsWith('compileReleaseJavaWithJavac') || it.name.startsWith('compileDebugJavaWithJavac') }.all {
+    doFirst {
+        def aidlOut = file("$buildDir/generated/aidl_source_output_dir")
+        if (aidlOut.exists()) {
+            aidlOut.eachFileRecurse { f ->
+                if (f.name.endsWith('.java')) {
+                    def content = f.text
+                    if (content.contains(' * Using:')) {
+                        content = content.replaceAll(/(?m)^ \* Using:.*$/, '')
+                        f.text = content
+                    }
+                }
+            }
+        }
+    }
+}
 
 tasks.withType(Javadoc) {
     options.addStringOption('Xdoclint:none', '-quiet')

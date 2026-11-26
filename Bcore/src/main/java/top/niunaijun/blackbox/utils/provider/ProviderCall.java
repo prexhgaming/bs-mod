@@ -8,7 +8,7 @@ import android.os.Parcelable;
 import java.io.Serializable;
 
 import top.niunaijun.blackbox.BlackBoxCore;
-import top.niunaijun.blackbox.utils.compat.BzContentProviderCompat;
+import top.niunaijun.blackbox.utils.compat.ContentProviderCompat;
 
 
 public class ProviderCall {
@@ -23,7 +23,7 @@ public class ProviderCall {
 
     public static Bundle call(String authority, Context context, String method, String arg, Bundle bundle, int retryCount) throws IllegalAccessException {
         Uri uri = Uri.parse("content://" + authority);
-        return BzContentProviderCompat.call(context, uri, method, arg, bundle, retryCount);
+        return ContentProviderCompat.call(context, uri, method, arg, bundle, retryCount);
     }
 
     public static final class Builder {

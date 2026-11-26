@@ -19,8 +19,6 @@ import top.niunaijun.blackbox.fake.service.IAppOpsManagerProxy;
 import top.niunaijun.blackbox.fake.service.IAppWidgetManagerProxy;
 import top.niunaijun.blackbox.fake.service.IAttributionSourceProxy;
 import top.niunaijun.blackbox.fake.service.IAutofillManagerProxy;
-import top.niunaijun.blackbox.fake.service.IInputMethodManagerProxy;
-import top.niunaijun.blackbox.fake.service.ICredentialManagerProxy;
 import top.niunaijun.blackbox.fake.service.ISensitiveContentProtectionManagerProxy;
 import top.niunaijun.blackbox.fake.service.ISettingsSystemProxy;
 import top.niunaijun.blackbox.fake.service.IConnectivityManagerProxy;
@@ -38,20 +36,17 @@ import top.niunaijun.blackbox.fake.service.IFingerprintManagerProxy;
 import top.niunaijun.blackbox.fake.service.IGraphicsStatsProxy;
 import top.niunaijun.blackbox.fake.service.IJobServiceProxy;
 import top.niunaijun.blackbox.fake.service.ILauncherAppsProxy;
-import top.niunaijun.blackbox.fake.service.ILocaleManagerProxy;
 import top.niunaijun.blackbox.fake.service.ILocationManagerProxy;
 import top.niunaijun.blackbox.fake.service.IMediaRouterServiceProxy;
 import top.niunaijun.blackbox.fake.service.IMediaSessionManagerProxy;
 import top.niunaijun.blackbox.fake.service.IAudioServiceProxy;
 import top.niunaijun.blackbox.fake.service.ISensorPrivacyManagerProxy;
 import top.niunaijun.blackbox.fake.service.ContentResolverProxy;
-import top.niunaijun.blackbox.fake.service.IWebViewUpdateServiceProxy;
 import top.niunaijun.blackbox.fake.service.IMiuiSecurityManagerProxy;
 import top.niunaijun.blackbox.fake.service.SystemLibraryProxy;
 import top.niunaijun.blackbox.fake.service.ReLinkerProxy;
-import top.niunaijun.blackbox.fake.service.WebViewProxy;
-import top.niunaijun.blackbox.fake.service.WebViewFactoryProxy;
 import top.niunaijun.blackbox.fake.service.MediaRecorderProxy;
+import top.niunaijun.blackbox.fake.service.NetworkPermissionCompat;
 import top.niunaijun.blackbox.fake.service.AudioRecordProxy;
 import top.niunaijun.blackbox.fake.service.MediaRecorderClassProxy;
 import top.niunaijun.blackbox.fake.service.SQLiteDatabaseProxy;
@@ -64,6 +59,7 @@ import top.niunaijun.blackbox.fake.service.GoogleAccountManagerProxy;
 import top.niunaijun.blackbox.fake.service.AuthenticationProxy;
 import top.niunaijun.blackbox.fake.service.AndroidIdProxy;
 import top.niunaijun.blackbox.fake.service.AudioPermissionProxy;
+import top.niunaijun.blackbox.fake.service.NetworkPermissionCompat;
 
 import top.niunaijun.blackbox.fake.service.INetworkManagementServiceProxy;
 import top.niunaijun.blackbox.fake.service.INotificationManagerProxy;
@@ -71,19 +67,15 @@ import top.niunaijun.blackbox.fake.service.IPackageManagerProxy;
 import top.niunaijun.blackbox.fake.service.IPermissionManagerProxy;
 import top.niunaijun.blackbox.fake.service.IPersistentDataBlockServiceProxy;
 import top.niunaijun.blackbox.fake.service.IPhoneSubInfoProxy;
-import top.niunaijun.blackbox.fake.service.IPhoneSubInfoServiceProxy;
 import top.niunaijun.blackbox.fake.service.IPowerManagerProxy;
 import top.niunaijun.blackbox.fake.service.ApkAssetsProxy;
 import top.niunaijun.blackbox.fake.service.ResourcesManagerProxy;
-import top.niunaijun.blackbox.fake.service.IRoleManagerProxy;
 import top.niunaijun.blackbox.fake.service.IShortcutManagerProxy;
 import top.niunaijun.blackbox.fake.service.IStorageManagerProxy;
 import top.niunaijun.blackbox.fake.service.IStorageStatsManagerProxy;
 import top.niunaijun.blackbox.fake.service.ISystemUpdateProxy;
-import top.niunaijun.blackbox.fake.service.ISubServiceProxy;
 import top.niunaijun.blackbox.fake.service.ITelephonyManagerProxy;
 import top.niunaijun.blackbox.fake.service.ITelephonyRegistryProxy;
-import top.niunaijun.blackbox.fake.service.IUiModeManagerProxy;
 import top.niunaijun.blackbox.fake.service.IUserManagerProxy;
 import top.niunaijun.blackbox.fake.service.IVibratorServiceProxy;
 import top.niunaijun.blackbox.fake.service.IVpnManagerProxy;
@@ -124,7 +116,6 @@ public class HookManager {
             addInjector(new INotificationManagerProxy());
             addInjector(new IAlarmManagerProxy());
             addInjector(new IAppWidgetManagerProxy());
-            addInjector(new IInputMethodManagerProxy());
             addInjector(new ContentServiceStub());
             addInjector(new IWindowManagerProxy());
             addInjector(new IUserManagerProxy());
@@ -133,11 +124,8 @@ public class HookManager {
             addInjector(new IAudioServiceProxy());
             addInjector(new ISensorPrivacyManagerProxy());
             addInjector(new ContentResolverProxy());
-            addInjector(new IWebViewUpdateServiceProxy());
             addInjector(new SystemLibraryProxy());
             addInjector(new ReLinkerProxy());
-            addInjector(new WebViewProxy());
-            addInjector(new WebViewFactoryProxy());
             addInjector(new WorkManagerProxy());
             addInjector(new MediaRecorderProxy());
             addInjector(new AudioRecordProxy());
@@ -158,29 +146,23 @@ public class HookManager {
             addInjector(new ILocationManagerProxy());
             addInjector(new IStorageManagerProxy());
             addInjector(new ILauncherAppsProxy());
-            addInjector(new ILocaleManagerProxy());
             addInjector(new IJobServiceProxy());
             addInjector(new IAccessibilityManagerProxy());
             addInjector(new ITelephonyRegistryProxy());
             addInjector(new IDevicePolicyManagerProxy());
             addInjector(new IAccountManagerProxy());
+            addInjector(new NetworkPermissionCompat());
             addInjector(new IConnectivityManagerProxy());
             addInjector(new IDnsResolverProxy());
                     addInjector(new IAttributionSourceProxy());
         addInjector(new IContentProviderProxy());
         addInjector(new ISettingsSystemProxy());
         addInjector(new ISystemSensorManagerProxy());
-
-            if (android.os.Build.VERSION.SDK_INT >= 34) {
-                addInjector(new ICredentialManagerProxy());
-            }
         
         
         addInjector(new IXiaomiAttributionSourceProxy());
         addInjector(new IXiaomiSettingsProxy());
         addInjector(new IXiaomiMiuiServicesProxy());
-            addInjector(new IPhoneSubInfoServiceProxy());
-            addInjector(new ISubServiceProxy());
             addInjector(new IPhoneSubInfoProxy());
             addInjector(new IMediaRouterServiceProxy());
             addInjector(new IPowerManagerProxy());
@@ -210,7 +192,6 @@ public class HookManager {
             
             if (BuildCompat.isQ()) {
                 addInjector(new IActivityTaskManagerProxy());
-                addInjector(new IRoleManagerProxy());
             }
             
             if (BuildCompat.isPie()) {
@@ -224,7 +205,6 @@ public class HookManager {
             }
             
             if (BuildCompat.isN_MR1()) {
-            addInjector(new IUiModeManagerProxy());
                 addInjector(new IShortcutManagerProxy());
             }
             
@@ -310,8 +290,7 @@ public class HookManager {
     public boolean areCriticalHooksInstalled() {
         String[] criticalHooks = {
             "IActivityManagerProxy",
-            "IPackageManagerProxy", 
-            "WebViewProxy",
+            "IPackageManagerProxy",
             "IContentProviderProxy"
         };
         

@@ -20,14 +20,6 @@ import top.niunaijun.blackbox.utils.UIDSpoofingHelper;
 public class IJobServiceProxy extends BinderInvocationStub {
     public static final String TAG = "JobServiceStub";
 
-    private static int findJobInfoArgIndex(Object[] args) {
-        if (args == null) return -1;
-        for (int i = 0; i < args.length; i++) {
-            if (args[i] instanceof JobInfo) return i;
-        }
-        return -1;
-    }
-
     public IJobServiceProxy() {
         super(BRServiceManager.get().getService(Context.JOB_SCHEDULER_SERVICE));
     }
@@ -48,38 +40,40 @@ public class IJobServiceProxy extends BinderInvocationStub {
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
             try {
+                
                 if (args == null || args.length == 0) {
                     Slog.w(TAG, "Schedule: No arguments provided, returning RESULT_FAILURE");
                     return 0; 
                 }
-
-                final int jobInfoIndex = findJobInfoArgIndex(args);
-                if (jobInfoIndex < 0) {
-                    Slog.w(TAG, "Schedule: No JobInfo found in args, invoking original");
-                    return method.invoke(who, args);
+                
+                if (args[0] == null) {
+                    Slog.w(TAG, "Schedule: args[0] is null, returning RESULT_FAILURE");
+                    return 0; 
                 }
-
-                JobInfo jobInfo = (JobInfo) args[jobInfoIndex];
-                if (jobInfo == null) {
-                    Slog.w(TAG, "Schedule: JobInfo is null (idx=" + jobInfoIndex + "), returning RESULT_FAILURE");
-                    return 0;
+                
+                if (!(args[0] instanceof JobInfo)) {
+                    Slog.w(TAG, "Schedule: args[0] is not JobInfo: " + args[0].getClass().getSimpleName());
+                    
+                    return handleNonJobInfoSchedule(who, method, args);
                 }
-
-                Slog.d(TAG, "Schedule: Processing JobInfo for package: " + jobInfo.getService().getPackageName() + " (idx=" + jobInfoIndex + ")");
+                
+                JobInfo jobInfo = (JobInfo) args[0];
+                Slog.d(TAG, "Schedule: Processing JobInfo for package: " + jobInfo.getService().getPackageName());
                 
                 
                 try {
                     JobInfo proxyJobInfo = BlackBoxCore.getBJobManager().schedule(jobInfo);
                     if (proxyJobInfo != null) {
-                        args[jobInfoIndex] = proxyJobInfo;
+                        args[0] = proxyJobInfo;
                         Slog.d(TAG, "Schedule: Successfully created proxy JobInfo");
                         return method.invoke(who, args);
                     }
                 } catch (Exception e) {
                     Slog.w(TAG, "Schedule: BlackBox job manager failed, trying system fallback", e);
                 }
-
-                return method.invoke(who, args);
+                
+                
+                return scheduleWithUIDSpoofing(who, method, args, jobInfo);
                 
             } catch (Exception e) {
                 Slog.e(TAG, "Schedule: Error processing job", e);
@@ -89,12 +83,80 @@ public class IJobServiceProxy extends BinderInvocationStub {
                     Slog.w(TAG, "UID validation failed for job scheduling, returning RESULT_FAILURE: " + e.getCause().getMessage());
                     return 0; 
                 }
+                
+                
                 try {
                     return method.invoke(who, args);
                 } catch (Exception fallbackException) {
                     Slog.e(TAG, "Schedule: Fallback also failed", fallbackException);
                     return 0; 
                 }
+            }
+        }
+        
+        
+        private Object handleNonJobInfoSchedule(Object who, Method method, Object[] args) throws Throwable {
+            try {
+                
+                if (args[0] instanceof String) {
+                    String workId = (String) args[0];
+                    Slog.d(TAG, "Schedule: Handling WorkManager string ID: " + workId);
+                    
+                    
+                    JobInfo minimalJobInfo = createMinimalJobInfo(workId);
+                    if (minimalJobInfo != null) {
+                        args[0] = minimalJobInfo;
+                        return method.invoke(who, args);
+                    }
+                }
+                
+                
+                return method.invoke(who, args);
+            } catch (Exception e) {
+                Slog.w(TAG, "Schedule: Failed to handle non-JobInfo schedule", e);
+                return 0; 
+            }
+        }
+        
+        
+        private Object scheduleWithUIDSpoofing(Object who, Method method, Object[] args, JobInfo jobInfo) throws Throwable {
+            try {
+                
+                String targetPackage = jobInfo.getService().getPackageName();
+                Slog.d(TAG, "Schedule: Attempting UID spoofing for package: " + targetPackage);
+                
+                
+                UIDSpoofingHelper.logUIDInfo("job_schedule", targetPackage);
+                
+                
+                if (UIDSpoofingHelper.needsUIDSpoofing("job_schedule", targetPackage)) {
+                    Slog.d(TAG, "Schedule: UID spoofing needed, attempting to bypass validation");
+                    
+                    
+                    
+                    Slog.w(TAG, "Schedule: UID spoofing not fully implemented, returning RESULT_FAILURE");
+                    return 0; 
+                } else {
+                    Slog.d(TAG, "Schedule: No UID spoofing needed, proceeding normally");
+                    return method.invoke(who, args);
+                }
+                
+            } catch (Exception e) {
+                Slog.w(TAG, "Schedule: UID spoofing failed", e);
+                return 0; 
+            }
+        }
+        
+        
+        private JobInfo createMinimalJobInfo(String workId) {
+            try {
+                
+                
+                Slog.d(TAG, "Schedule: Creating minimal JobInfo for work ID: " + workId);
+                return null; 
+            } catch (Exception e) {
+                Slog.w(TAG, "Schedule: Failed to create minimal JobInfo", e);
+                return null;
             }
         }
         
@@ -154,38 +216,40 @@ public class IJobServiceProxy extends BinderInvocationStub {
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
             try {
+                
                 if (args == null || args.length == 0) {
                     Slog.w(TAG, "Enqueue: No arguments provided, returning RESULT_FAILURE");
                     return 0; 
                 }
-
-                final int jobInfoIndex = findJobInfoArgIndex(args);
-                if (jobInfoIndex < 0) {
-                    Slog.w(TAG, "Enqueue: No JobInfo found in args, invoking original");
-                    return method.invoke(who, args);
+                
+                if (args[0] == null) {
+                    Slog.w(TAG, "Enqueue: args[0] is null, returning RESULT_FAILURE");
+                    return 0; 
                 }
-
-                JobInfo jobInfo = (JobInfo) args[jobInfoIndex];
-                if (jobInfo == null) {
-                    Slog.w(TAG, "Enqueue: JobInfo is null (idx=" + jobInfoIndex + "), returning RESULT_FAILURE");
-                    return 0;
+                
+                if (!(args[0] instanceof JobInfo)) {
+                    Slog.w(TAG, "Enqueue: args[0] is not JobInfo: " + args[0].getClass().getSimpleName());
+                    
+                    return handleNonJobInfoEnqueue(who, method, args);
                 }
-
-                Slog.d(TAG, "Enqueue: Processing JobInfo for package: " + jobInfo.getService().getPackageName() + " (idx=" + jobInfoIndex + ")");
+                
+                JobInfo jobInfo = (JobInfo) args[0];
+                Slog.d(TAG, "Enqueue: Processing JobInfo for package: " + jobInfo.getService().getPackageName());
                 
                 
                 try {
                     JobInfo proxyJobInfo = BlackBoxCore.getBJobManager().schedule(jobInfo);
                     if (proxyJobInfo != null) {
-                        args[jobInfoIndex] = proxyJobInfo;
+                        args[0] = proxyJobInfo;
                         Slog.d(TAG, "Enqueue: Successfully created proxy JobInfo");
                         return method.invoke(who, args);
                     }
                 } catch (Exception e) {
                     Slog.w(TAG, "Enqueue: BlackBox job manager failed, trying system fallback", e);
                 }
-
-                return method.invoke(who, args);
+                
+                
+                return enqueueWithUIDSpoofing(who, method, args, jobInfo);
                 
             } catch (Exception e) {
                 Slog.e(TAG, "Enqueue: Error processing job", e);
@@ -195,12 +259,80 @@ public class IJobServiceProxy extends BinderInvocationStub {
                     Slog.w(TAG, "UID validation failed for job enqueuing, returning RESULT_FAILURE: " + e.getCause().getMessage());
                     return 0; 
                 }
+                
+                
                 try {
                     return method.invoke(who, args);
                 } catch (Exception fallbackException) {
                     Slog.e(TAG, "Enqueue: Fallback also failed", fallbackException);
                     return 0; 
                 }
+            }
+        }
+        
+        
+        private Object handleNonJobInfoEnqueue(Object who, Method method, Object[] args) throws Throwable {
+            try {
+                
+                if (args[0] instanceof String) {
+                    String workId = (String) args[0];
+                    Slog.d(TAG, "Enqueue: Handling WorkManager string ID: " + workId);
+                    
+                    
+                    JobInfo minimalJobInfo = createMinimalJobInfo(workId);
+                    if (minimalJobInfo != null) {
+                        args[0] = minimalJobInfo;
+                        return method.invoke(who, args);
+                    }
+                }
+                
+                
+                return method.invoke(who, args);
+            } catch (Exception e) {
+                Slog.w(TAG, "Enqueue: Failed to handle non-JobInfo enqueue", e);
+                return 0; 
+            }
+        }
+        
+        
+        private Object enqueueWithUIDSpoofing(Object who, Method method, Object[] args, JobInfo jobInfo) throws Throwable {
+            try {
+                
+                String targetPackage = jobInfo.getService().getPackageName();
+                Slog.d(TAG, "Enqueue: Attempting UID spoofing for package: " + targetPackage);
+                
+                
+                UIDSpoofingHelper.logUIDInfo("job_enqueue", targetPackage);
+                
+                
+                if (UIDSpoofingHelper.needsUIDSpoofing("job_enqueue", targetPackage)) {
+                    Slog.d(TAG, "Enqueue: UID spoofing needed, attempting to bypass validation");
+                    
+                    
+                    
+                    Slog.w(TAG, "Enqueue: UID spoofing not fully implemented, returning RESULT_FAILURE");
+                    return 0; 
+                } else {
+                    Slog.d(TAG, "Enqueue: No UID spoofing needed, proceeding normally");
+                    return method.invoke(who, args);
+                }
+                
+            } catch (Exception e) {
+                Slog.w(TAG, "Enqueue: UID spoofing failed", e);
+                return 0; 
+            }
+        }
+        
+        
+        private JobInfo createMinimalJobInfo(String workId) {
+            try {
+                
+                
+                Slog.d(TAG, "Enqueue: Creating minimal JobInfo for work ID: " + workId);
+                return null; 
+            } catch (Exception e) {
+                Slog.w(TAG, "Enqueue: Failed to create minimal JobInfo", e);
+                return null;
             }
         }
         

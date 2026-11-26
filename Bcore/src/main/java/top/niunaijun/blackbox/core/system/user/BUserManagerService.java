@@ -18,7 +18,7 @@ import top.niunaijun.blackbox.core.env.BEnvironment;
 import top.niunaijun.blackbox.core.system.ISystemService;
 import top.niunaijun.blackbox.core.system.pm.BPackageManagerService;
 import top.niunaijun.blackbox.utils.CloseUtils;
-import top.niunaijun.blackbox.utils.BzFileUtils;
+import top.niunaijun.blackbox.utils.FileUtils;
 
 
 public class BUserManagerService extends IBUserManagerService.Stub implements ISystemService {
@@ -86,8 +86,8 @@ public class BUserManagerService extends IBUserManagerService.Stub implements IS
 
                 mUsers.remove(userId);
                 saveUserInfoLocked();
-                BzFileUtils.deleteDir(BEnvironment.getUserDir(userId));
-                BzFileUtils.deleteDir(BEnvironment.getExternalUserDir(userId));
+                FileUtils.deleteDir(BEnvironment.getUserDir(userId));
+                FileUtils.deleteDir(BEnvironment.getExternalUserDir(userId));
             }
         }
     }
@@ -112,7 +112,7 @@ public class BUserManagerService extends IBUserManagerService.Stub implements IS
             parcel.writeTypedList(bUsers);
             try {
                 fileOutputStream = atomicFile.startWrite();
-                BzFileUtils.writeParcelToOutput(parcel, fileOutputStream);
+                FileUtils.writeParcelToOutput(parcel, fileOutputStream);
                 atomicFile.finishWrite(fileOutputStream);
             } catch (IOException e) {
                 e.printStackTrace();
@@ -135,7 +135,7 @@ public class BUserManagerService extends IBUserManagerService.Stub implements IS
                     return;
                 }
                 is = new FileInputStream(BEnvironment.getUserInfoConf());
-                byte[] bytes = BzFileUtils.toByteArray(is);
+                byte[] bytes = FileUtils.toByteArray(is);
                 parcel.unmarshall(bytes, 0, bytes.length);
                 parcel.setDataPosition(0);
 

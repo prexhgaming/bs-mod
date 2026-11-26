@@ -8,7 +8,7 @@ import android.content.pm.PackageInfo;
 import android.content.pm.ProviderInfo;
 import android.content.pm.ResolveInfo;
 import android.content.pm.ServiceInfo;
-import android.net.Uri;
+import android.content.pm.Signature;
 import android.os.Bundle;
 import android.os.RemoteException;
 import android.util.Log;
@@ -44,17 +44,7 @@ public class BPackageManager extends BlackManager<IBPackageManagerService> {
     
     
     private boolean shouldUseFallbackMode() {
-        if (transactionThrottler.getFailureCount() >= 2) {
-            return true;
-        }
-
-        if (isServiceHealthy()) {
-            return false;
-        }
-
-        // Service may be uninitialized on first call; attempt a lazy init before falling back.
-        IBPackageManagerService service = getService();
-        return service == null || !isServiceHealthy();
+        return transactionThrottler.getFailureCount() >= 2 || !isServiceHealthy();
     }
 
     
@@ -511,22 +501,13 @@ public class BPackageManager extends BlackManager<IBPackageManagerService> {
             if (file != null && !file.isEmpty()) {
                 try {
                     
-                    Uri uri = Uri.parse(file);
-                    String scheme = uri.getScheme();
-                    boolean looksLikeUri = scheme != null && !scheme.isEmpty();
-
-                    // Only run archive precheck for real filesystem paths.
-                    // On Android, passing a content:// URI to getPackageArchiveInfo() produces a broken
-                    // "/content:/..." path and noisy zip/apk parse failures.
-                    if (!looksLikeUri && !file.startsWith("/content:/") && !file.startsWith("content:/")) {
-                        PackageInfo packageInfo = BlackBoxCore.getPackageManager().getPackageArchiveInfo(file, 0);
-                        if (packageInfo != null) {
-                            String packageName = packageInfo.packageName;
-                            String hostPackageName = BlackBoxCore.getHostPkg();
-                            if (packageName.equals(hostPackageName)) {
-                                Log.w(TAG, "Attempt to install BlackBox app detected and blocked: " + packageName);
-                                return new InstallResult().installError("Cannot clone BlackBox app from within BlackBox. This would create infinite recursion and is not allowed for security reasons.");
-                            }
+                    PackageInfo packageInfo = BlackBoxCore.getPackageManager().getPackageArchiveInfo(file, 0);
+                    if (packageInfo != null) {
+                        String packageName = packageInfo.packageName;
+                        String hostPackageName = BlackBoxCore.getHostPkg();
+                        if (packageName.equals(hostPackageName)) {
+                            Log.w(TAG, "Attempt to install BlackBox app detected and blocked: " + packageName);
+                            return new InstallResult().installError("Cannot clone BlackBox app from within BlackBox. This would create infinite recursion and is not allowed for security reasons.");
                         }
                     }
                 } catch (Exception e) {
@@ -534,16 +515,11 @@ public class BPackageManager extends BlackManager<IBPackageManagerService> {
                 }
             }
             
-            IBPackageManagerService service = getServiceWithFallback();
-            if (service == null) {
-                Log.w(TAG, "PackageManager service is null in installPackageAsUser, returning install error");
-                return new InstallResult().installError("PackageManager service unavailable");
-            }
-            return service.installPackageAsUser(file, option, userId);
+            return getService().installPackageAsUser(file, option, userId);
         } catch (RemoteException e) {
             crash(e);
         }
-        return new InstallResult().installError("Remote exception during install");
+        return null;
     }
 
     public List<ApplicationInfo> getInstalledApplications(int flags, int userId) {
@@ -852,10 +828,8 @@ public class BPackageManager extends BlackManager<IBPackageManagerService> {
         info.installLocation = 0; 
         info.gids = new int[]{}; 
         info.splitNames = new String[]{}; 
-        // Deliberately left null. An empty Signature[] is not "no signatures" to
-        // GoogleSignatureVerifier (it needs length == 1, so both fail) but it is
-        // strictly worse: callers that do signatures[0] get an
-        // ArrayIndexOutOfBoundsException instead of a clean verification failure.
+        info.signatures = new Signature[]{}; 
         return info;
     }
 }
+

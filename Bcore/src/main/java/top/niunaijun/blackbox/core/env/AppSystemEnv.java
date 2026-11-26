@@ -29,11 +29,6 @@ public class AppSystemEnv {
 
         
         sSystemPackages.add("com.google.android.inputmethod.latin");
-
-        // Samsung Health sign-in falls back to Samsung Account or a browser.
-        sSystemPackages.add("com.osp.app.signin");
-        sSystemPackages.add("com.sec.android.app.sbrowser");
-        sSystemPackages.add("com.android.chrome");
         
 
         

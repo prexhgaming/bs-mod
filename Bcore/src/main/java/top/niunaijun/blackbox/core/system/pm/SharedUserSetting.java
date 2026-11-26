@@ -11,7 +11,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 import top.niunaijun.blackbox.core.env.BEnvironment;
-import top.niunaijun.blackbox.utils.BzFileUtils;
+import top.niunaijun.blackbox.utils.FileUtils;
 import top.niunaijun.blackbox.utils.Slog;
 
 
@@ -48,7 +48,7 @@ public final class SharedUserSetting implements Parcelable {
             parcel.writeMap(sSharedUsers);
 
             fileOutputStream = atomicFile.startWrite();
-            BzFileUtils.writeParcelToOutput(parcel, fileOutputStream);
+            FileUtils.writeParcelToOutput(parcel, fileOutputStream);
             atomicFile.finishWrite(fileOutputStream);
         } catch (Exception e) {
             e.printStackTrace();
@@ -61,7 +61,7 @@ public final class SharedUserSetting implements Parcelable {
     public static void loadSharedUsers() {
         Parcel parcel = Parcel.obtain();
         try {
-            byte[] sharedUsersBytes = BzFileUtils.toByteArray(BEnvironment.getSharedUserConf());
+            byte[] sharedUsersBytes = FileUtils.toByteArray(BEnvironment.getSharedUserConf());
             if (sharedUsersBytes == null || sharedUsersBytes.length == 0) {
                 
                 return;

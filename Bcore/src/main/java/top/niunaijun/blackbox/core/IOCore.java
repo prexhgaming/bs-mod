@@ -19,7 +19,7 @@ import java.util.Set;
 import top.niunaijun.blackbox.BlackBoxCore;
 
 import top.niunaijun.blackbox.core.env.BEnvironment;
-import top.niunaijun.blackbox.utils.BzFileUtils;
+import top.niunaijun.blackbox.utils.FileUtils;
 import top.niunaijun.blackbox.utils.TrieTree;
 
 
@@ -47,7 +47,7 @@ public class IOCore {
         mRedirectMap.put(origPath, redirectPath);
         File redirectFile = new File(redirectPath);
         if (!redirectFile.exists()) {
-            BzFileUtils.mkdirs(redirectPath);
+            FileUtils.mkdirs(redirectPath);
         }
         NativeCore.addIORule(origPath, redirectPath);
     }
@@ -120,14 +120,14 @@ public class IOCore {
 
             
             File profilesRoot = new File(BEnvironment.getVirtualRoot(), "profiles");
-            BzFileUtils.mkdirs(profilesRoot.getAbsolutePath());
+            FileUtils.mkdirs(profilesRoot.getAbsolutePath());
             
             rule.put("/data/misc/profiles", profilesRoot.getAbsolutePath());
 
             File profilesCurDir = new File(profilesRoot, String.format("cur/%d/%s", BlackBoxCore.getUserId(), packageName));
             File profilesRefDir = new File(profilesRoot, String.format("ref/%d/%s", BlackBoxCore.getUserId(), packageName));
-            BzFileUtils.mkdirs(profilesCurDir.getAbsolutePath());
-            BzFileUtils.mkdirs(profilesRefDir.getAbsolutePath());
+            FileUtils.mkdirs(profilesCurDir.getAbsolutePath());
+            FileUtils.mkdirs(profilesRefDir.getAbsolutePath());
             rule.put(String.format("/data/misc/profiles/cur/%d/%s", BlackBoxCore.getUserId(), packageName), profilesCurDir.getAbsolutePath());
             rule.put(String.format("/data/misc/profiles/ref/%d/%s", BlackBoxCore.getUserId(), packageName), profilesRefDir.getAbsolutePath());
 

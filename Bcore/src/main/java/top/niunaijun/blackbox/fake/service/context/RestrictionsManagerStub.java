@@ -1,7 +1,6 @@
 package top.niunaijun.blackbox.fake.service.context;
 
 import android.content.Context;
-import android.os.Bundle;
 
 import java.lang.reflect.Method;
 
@@ -38,17 +37,8 @@ public class RestrictionsManagerStub extends BinderInvocationStub {
     public static class GetApplicationRestrictions extends MethodHook {
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
-            // Privacy-first: sandboxed apps should see no managed restrictions
-            // unless the virtual environment implements them explicitly.
-            return new Bundle();
-        }
-    }
-
-    @ProxyMethod("getApplicationRestrictionsForUser")
-    public static class GetApplicationRestrictionsForUser extends MethodHook {
-        @Override
-        protected Object hook(Object who, Method method, Object[] args) throws Throwable {
-            return new Bundle();
+            args[0] = BlackBoxCore.getHostPkg();
+            return method.invoke(who, args);
         }
     }
 }

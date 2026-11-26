@@ -14,7 +14,7 @@ import top.niunaijun.blackbox.core.env.BEnvironment;
 import top.niunaijun.blackbox.core.system.user.BUserHandle;
 import top.niunaijun.blackbox.entity.pm.InstallOption;
 import top.niunaijun.blackbox.utils.CloseUtils;
-import top.niunaijun.blackbox.utils.BzFileUtils;
+import top.niunaijun.blackbox.utils.FileUtils;
 
 
 public class BPackageSettings implements Parcelable {
@@ -95,7 +95,7 @@ public class BPackageSettings implements Parcelable {
                 writeToParcel(parcel, 0);
                 parcel.setDataPosition(0);
                 fileOutputStream = atomicFile.startWrite();
-                BzFileUtils.writeParcelToOutput(parcel, fileOutputStream);
+                FileUtils.writeParcelToOutput(parcel, fileOutputStream);
                 atomicFile.finishWrite(fileOutputStream);
                 return true;
             } catch (Throwable e) {

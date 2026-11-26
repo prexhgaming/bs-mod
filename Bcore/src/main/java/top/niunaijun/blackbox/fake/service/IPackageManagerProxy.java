@@ -14,7 +14,6 @@ import android.util.Log;
 
 import java.lang.reflect.Method;
 import java.lang.reflect.Parameter;
-import java.lang.reflect.Constructor;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -26,14 +25,12 @@ import black.android.content.pm.BRPackageManager;
 import top.niunaijun.blackbox.BlackBoxCore;
 import top.niunaijun.blackbox.app.BActivityThread;
 import top.niunaijun.blackbox.core.env.AppSystemEnv;
-import top.niunaijun.blackbox.core.env.SamsungHealthCompat;
 import top.niunaijun.blackbox.fake.FakeCore;
 import top.niunaijun.blackbox.fake.hook.BinderInvocationStub;
 import top.niunaijun.blackbox.fake.hook.MethodHook;
 import top.niunaijun.blackbox.fake.hook.ProxyMethod;
 import top.niunaijun.blackbox.fake.service.base.PkgMethodProxy;
 import top.niunaijun.blackbox.fake.service.base.ValueMethodProxy;
-import top.niunaijun.blackbox.media.BlackBoxMediaContract;
 import top.niunaijun.blackbox.utils.MethodParameterUtils;
 import top.niunaijun.blackbox.utils.Reflector;
 import top.niunaijun.blackbox.utils.Slog;
@@ -43,74 +40,6 @@ import top.niunaijun.blackbox.utils.compat.ParceledListSliceCompat;
 
 public class IPackageManagerProxy extends BinderInvocationStub {
     public static final String TAG = "PackageManagerStub";
-
-    private static final String PKG_SAMSUNG_HEALTH = "com.sec.android.app.shealth";
-    private static final String PKG_SAMSUNG_ACCOUNT = "com.osp.app.signin";
-
-    private static boolean shouldHideHostSamsungAccountForSamsungHealth(String queriedPackageName) {
-        if (!PKG_SAMSUNG_ACCOUNT.equals(queriedPackageName)) {
-            return false;
-        }
-        try {
-            String callerPackage = BActivityThread.getAppPackageName();
-            if (!PKG_SAMSUNG_HEALTH.equals(callerPackage)) {
-                return false;
-            }
-            int userId = BActivityThread.getUserId();
-            return !SamsungHealthCompat.isHostSamsungAccountFallbackEnabled(userId, callerPackage);
-        } catch (Throwable ignored) {
-        }
-        return false;
-    }
-
-    private static boolean shouldHideHostSamsungAccountForSamsungHealth(Intent intent) {
-        if (intent == null) {
-            return false;
-        }
-        try {
-            String targetPackage = intent.getPackage();
-            if (targetPackage == null) {
-                ComponentName cn = intent.getComponent();
-                if (cn != null) {
-                    targetPackage = cn.getPackageName();
-                }
-            }
-            return shouldHideHostSamsungAccountForSamsungHealth(targetPackage);
-        } catch (Throwable ignored) {
-        }
-        return false;
-    }
-
-    private static boolean shouldHideHostSamsungAccountForSamsungHealthCaller() {
-        try {
-            String callerPackage = BActivityThread.getAppPackageName();
-            if (!PKG_SAMSUNG_HEALTH.equals(callerPackage)) {
-                return false;
-            }
-            int userId = BActivityThread.getUserId();
-            return !SamsungHealthCompat.isHostSamsungAccountFallbackEnabled(userId, callerPackage);
-        } catch (Throwable ignored) {
-        }
-        return false;
-    }
-
-    private static List<ResolveInfo> filterOutSamsungAccountActivities(List<ResolveInfo> resolves) {
-        if (resolves == null || resolves.isEmpty()) {
-            return resolves;
-        }
-        ArrayList<ResolveInfo> filtered = new ArrayList<>(resolves.size());
-        for (ResolveInfo ri : resolves) {
-            if (ri == null) {
-                continue;
-            }
-            ActivityInfo ai = ri.activityInfo;
-            if (ai != null && PKG_SAMSUNG_ACCOUNT.equals(ai.packageName)) {
-                continue;
-            }
-            filtered.add(ri);
-        }
-        return filtered;
-    }
 
     public IPackageManagerProxy() {
         super(BRActivityThread.get().sPackageManager().asBinder());
@@ -164,20 +93,12 @@ public class IPackageManagerProxy extends BinderInvocationStub {
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
             Intent intent = (Intent) args[0];
-
-            // Privacy-first Samsung Health behavior: when host Samsung Account fallback is OFF,
-            // ensure SaSDK cannot resolve intents into the host Samsung Account app.
-            if (shouldHideHostSamsungAccountForSamsungHealth(intent)) {
-                return null;
-            }
-
             String resolvedType = (String) args[1];
             int flags = MethodParameterUtils.toInt(args[2]);
             ResolveInfo resolveInfo = BlackBoxCore.getBPackageManager().resolveIntent(intent, resolvedType, flags, BlackBoxCore.getUserId());
             if (resolveInfo != null) {
                 return resolveInfo;
             }
-            MethodParameterUtils.replaceUserIdIfNeeded(args, args.length - 1);
             return method.invoke(who, args);
         }
     }
@@ -193,71 +114,7 @@ public class IPackageManagerProxy extends BinderInvocationStub {
             if (resolveInfo != null) {
                 return resolveInfo;
             }
-            MethodParameterUtils.replaceUserIdIfNeeded(args, args.length - 1);
             return method.invoke(who, args);
-        }
-    }
-
-    @ProxyMethod("getInstallSourceInfo")
-    public static class GetInstallSourceInfo extends MethodHook {
-        @Override
-        protected Object hook(Object who, Method method, Object[] args) throws Throwable {
-            String packageName = args != null && args.length > 0 ? (String) args[0] : null;
-            if (packageName == null) {
-                return method.invoke(who, args);
-            }
-
-            int userId = BlackBoxCore.getUserId();
-            if (BlackBoxCore.get().isInstalled(packageName, userId)) {
-                Object info = createFakeInstallSourceInfo();
-                if (info != null) {
-                    return info;
-                }
-                // Last resort: behave like "not installed" rather than crashing the caller with NPE.
-                throw new PackageManager.NameNotFoundException(packageName);
-            }
-
-            if (AppSystemEnv.isOpenPackage(packageName)) {
-                MethodParameterUtils.replaceUserIdIfNeeded(args, args.length - 1);
-                return method.invoke(who, args);
-            }
-
-            throw new PackageManager.NameNotFoundException(packageName);
-        }
-
-        private Object createFakeInstallSourceInfo() {
-            // Privacy-first: never leak host installer / store identity. Return an object with null fields.
-            try {
-                Class<?> cls = Class.forName("android.content.pm.InstallSourceInfo");
-                Constructor<?>[] ctors = cls.getDeclaredConstructors();
-                if (ctors == null || ctors.length == 0) {
-                    return null;
-                }
-                for (Constructor<?> ctor : ctors) {
-                    try {
-                        ctor.setAccessible(true);
-                        Class<?>[] types = ctor.getParameterTypes();
-                        Object[] params = new Object[types.length];
-                        for (int i = 0; i < types.length; i++) {
-                            Class<?> t = types[i];
-                            if (t == String.class) {
-                                params[i] = null;
-                            } else if (t == int.class || t == Integer.class) {
-                                params[i] = 0;
-                            } else if (t == boolean.class || t == Boolean.class) {
-                                params[i] = false;
-                            } else {
-                                // SigningInfo / other parcelables: null
-                                params[i] = null;
-                            }
-                        }
-                        return ctor.newInstance(params);
-                    } catch (Throwable ignored) {
-                    }
-                }
-            } catch (Throwable ignored) {
-            }
-            return null;
         }
     }
 
@@ -265,65 +122,7 @@ public class IPackageManagerProxy extends BinderInvocationStub {
     public static class SetComponentEnabledSetting extends MethodHook {
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
-            ComponentName componentName = (ComponentName) args[0];
-            String packageName = componentName != null ? componentName.getPackageName() : null;
-            if (packageName != null && BlackBoxCore.get().isInstalled(packageName, BlackBoxCore.getUserId())) {
-                return 0;
-            }
-            if (packageName != null && AppSystemEnv.isOpenPackage(packageName)) {
-                MethodParameterUtils.replaceUserIdIfNeeded(args, 3);
-                return method.invoke(who, args);
-            }
             return 0;
-        }
-    }
-
-    @ProxyMethod("setApplicationEnabledSetting")
-    public static class SetApplicationEnabledSetting extends MethodHook {
-        @Override
-        protected Object hook(Object who, Method method, Object[] args) throws Throwable {
-            String packageName = (String) args[0];
-            if (packageName != null && BlackBoxCore.get().isInstalled(packageName, BlackBoxCore.getUserId())) {
-                return null;
-            }
-            if (packageName != null && AppSystemEnv.isOpenPackage(packageName)) {
-                MethodParameterUtils.replaceUserIdIfNeeded(args, 3);
-                return method.invoke(who, args);
-            }
-            return null;
-        }
-    }
-
-    @ProxyMethod("getApplicationEnabledSetting")
-    public static class GetApplicationEnabledSetting extends MethodHook {
-        @Override
-        protected Object hook(Object who, Method method, Object[] args) throws Throwable {
-            String packageName = (String) args[0];
-            if (packageName != null && BlackBoxCore.get().isInstalled(packageName, BlackBoxCore.getUserId())) {
-                return PackageManager.COMPONENT_ENABLED_STATE_DEFAULT;
-            }
-            if (packageName != null && AppSystemEnv.isOpenPackage(packageName)) {
-                MethodParameterUtils.replaceUserIdIfNeeded(args, args.length - 1);
-                return method.invoke(who, args);
-            }
-            return PackageManager.COMPONENT_ENABLED_STATE_DISABLED;
-        }
-    }
-
-    @ProxyMethod("getComponentEnabledSetting")
-    public static class GetComponentEnabledSetting extends MethodHook {
-        @Override
-        protected Object hook(Object who, Method method, Object[] args) throws Throwable {
-            ComponentName componentName = (ComponentName) args[0];
-            String packageName = componentName != null ? componentName.getPackageName() : null;
-            if (packageName != null && BlackBoxCore.get().isInstalled(packageName, BlackBoxCore.getUserId())) {
-                return PackageManager.COMPONENT_ENABLED_STATE_DEFAULT;
-            }
-            if (packageName != null && AppSystemEnv.isOpenPackage(packageName)) {
-                MethodParameterUtils.replaceUserIdIfNeeded(args, args.length - 1);
-                return method.invoke(who, args);
-            }
-            return PackageManager.COMPONENT_ENABLED_STATE_DISABLED;
         }
     }
 
@@ -333,37 +132,10 @@ public class IPackageManagerProxy extends BinderInvocationStub {
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
             String packageName = (String) args[0];
             int flags = MethodParameterUtils.toInt(args[1]);
-
-            // Samsung Health SaSDK should not detect the host Samsung Account package unless the
-            // explicit per-app fallback toggle is enabled.
-            if (shouldHideHostSamsungAccountForSamsungHealth(packageName)) {
-                return null;
-            }
             
             
             if ("com.android.vending".equals(packageName)) {
-                PackageInfo fake = createFakeGooglePlayServicesPackageInfo();
-                // The signatures are not cosmetic: GoogleSignatureVerifier logs
-                // "package info is not set correctly" and rejects any PackageInfo
-                // whose signatures are null or whose length != 1, and everything
-                // downstream follows from that one failure — GooglePlayServicesUtil
-                // reports an invalid Play Store signature, DynamiteModule disables
-                // remote loading ("Invalid GmsCore APK") and GoogleApiManager turns
-                // every service into SERVICE_INVALID.
-                //
-                // A fabricated certificate can never match Google's, so the only
-                // thing that works is borrowing the real one from the host package.
-                // This used to sit behind an opt-in "host_signing_fallback" pref that
-                // defaults to false, which meant GMS could never work out of the box.
-                PackageInfo real = tryGetRealHostPackageInfoWithSignatures(who, method, args);
-                if (real != null) {
-                    attachSigningInfo(fake, real);
-                    fillFakePackageGaps(fake, real);
-                } else {
-                    Slog.w(TAG, "GetPackageInfo: no host " + packageName
-                            + " available to borrow signatures from");
-                }
-                return fake;
+                return createFakeGooglePlayServicesPackageInfo();
             }
             
             PackageInfo packageInfo = BlackBoxCore.getBPackageManager().getPackageInfo(packageName, flags, BlackBoxCore.getUserId());
@@ -380,90 +152,12 @@ public class IPackageManagerProxy extends BinderInvocationStub {
                         }
                     }
                 }
-                // GMS verifies its own signature on several paths (DynamiteModule
-                // before enabling remote loading, GoogleApiManager before handing out
-                // a service). When the sandbox copy came back without certificates,
-                // borrow the host's real ones instead of failing verification.
-                if (shouldAttachSigningInfo(flags) && isGooglePackage(packageName)
-                        && (packageInfo.signatures == null || packageInfo.signatures.length == 0)) {
-                    PackageInfo real = tryGetRealHostPackageInfoWithSignatures(who, method, args);
-                    if (real != null) {
-                        attachSigningInfo(packageInfo, real);
-                    }
-                }
                 return packageInfo;
             }
             if (AppSystemEnv.isOpenPackage(packageName)) {
-                MethodParameterUtils.replaceUserIdIfNeeded(args, args.length - 1);
                 return method.invoke(who, args);
             }
             return null;
-        }
-
-        private boolean shouldAttachSigningInfo(int flags) {
-            // GET_SIGNATURES is deprecated but still used by some libs.
-            final int GET_SIGNATURES = 0x00000040;
-            // GET_SIGNING_CERTIFICATES replaces GET_SIGNATURES on P+.
-            final int GET_SIGNING_CERTIFICATES = 0x08000000;
-            return (flags & (GET_SIGNATURES | GET_SIGNING_CERTIFICATES)) != 0;
-        }
-
-        private boolean isGooglePackage(String packageName) {
-            if (packageName == null) {
-                return false;
-            }
-            return "com.google.android.gms".equals(packageName)
-                    || "com.google.android.gsf".equals(packageName)
-                    || "com.android.vending".equals(packageName)
-                    || packageName.startsWith("com.google.android.");
-        }
-
-        /**
-         * Reads the host's real PackageInfo, forcing the flags that actually make
-         * PackageManager fill in certificates.
-         *
-         * This is the part the old code got wrong: it reused the caller's flags, and
-         * a request with flags = 0 carries no signatures at all, so
-         * attachSigningInfo() had nothing to copy and the fake Play Store stayed
-         * unsigned.
-         */
-        private PackageInfo tryGetRealHostPackageInfoWithSignatures(Object who, Method method, Object[] args) {
-            try {
-                Object[] argsCopy = args != null ? args.clone() : null;
-                if (argsCopy == null || argsCopy.length < 2) {
-                    return null;
-                }
-                // GET_SIGNATURES is deprecated but still what most verifiers read;
-                // GET_SIGNING_CERTIFICATES is the modern replacement (API 28+).
-                int flags = 0x00000040;
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                    flags |= 0x08000000;
-                }
-                argsCopy[1] = flags;
-                MethodParameterUtils.replaceUserIdIfNeeded(argsCopy, argsCopy.length - 1);
-                Object out = method.invoke(who, argsCopy);
-                return (out instanceof PackageInfo) ? (PackageInfo) out : null;
-            } catch (Throwable ignored) {
-            }
-            return null;
-        }
-
-        private void attachSigningInfo(PackageInfo target, PackageInfo source) {
-            if (target == null || source == null) {
-                return;
-            }
-            try {
-                if (source.signingInfo != null) {
-                    target.signingInfo = source.signingInfo;
-                }
-            } catch (Throwable ignored) {
-            }
-            try {
-                if (source.signatures != null && source.signatures.length > 0) {
-                    target.signatures = source.signatures;
-                }
-            } catch (Throwable ignored) {
-            }
         }
         
         private PackageInfo createFakeGooglePlayServicesPackageInfo() {
@@ -471,17 +165,7 @@ public class IPackageManagerProxy extends BinderInvocationStub {
             packageInfo.packageName = "com.android.vending";
             packageInfo.versionName = "33.8.16-21";
             packageInfo.versionCode = 83381621;
-
-            // Play Store (Finsky) indexes these arrays directly. A null array is not
-            // a graceful "unknown" to it: it throws
-            // "NullPointerException: Attempt to read from null array" and the process
-            // dies, which is what the logcat showed right after
-            // "PSR: Package com.android.vending has null signatures".
-            packageInfo.splitNames = new String[0];
-            packageInfo.gids = new int[0];
-            packageInfo.firstInstallTime = System.currentTimeMillis();
-            packageInfo.lastUpdateTime = System.currentTimeMillis();
-
+            
             ApplicationInfo appInfo = new ApplicationInfo();
             appInfo.packageName = "com.android.vending";
             appInfo.name = "Google Play Store";
@@ -491,55 +175,6 @@ public class IPackageManagerProxy extends BinderInvocationStub {
             
             Slog.d(TAG, "GetPackageInfo: Providing fake Google Play Services info");
             return packageInfo;
-        }
-
-        /**
-         * Fills the gaps the synthetic Play Store entry leaves, using the host's real
-         * PackageInfo.
-         *
-         * Signatures are the ones that matter for verification, but Finsky also opens
-         * its own APK (sourceDir/publicSourceDir) and reads its data dir, so leaving
-         * those null trades a signature failure for a null-pointer crash.
-         */
-        private void fillFakePackageGaps(PackageInfo fake, PackageInfo real) {
-            if (fake == null || real == null) {
-                return;
-            }
-            try {
-                if (fake.signatures == null) {
-                    fake.signatures = real.signatures;
-                }
-                if (fake.signingInfo == null) {
-                    fake.signingInfo = real.signingInfo;
-                }
-                if (fake.firstInstallTime == 0) {
-                    fake.firstInstallTime = real.firstInstallTime;
-                }
-                if (fake.lastUpdateTime == 0) {
-                    fake.lastUpdateTime = real.lastUpdateTime;
-                }
-                ApplicationInfo fakeApp = fake.applicationInfo;
-                ApplicationInfo realApp = real.applicationInfo;
-                if (fakeApp == null || realApp == null) {
-                    return;
-                }
-                if (fakeApp.sourceDir == null) {
-                    fakeApp.sourceDir = realApp.sourceDir;
-                }
-                if (fakeApp.publicSourceDir == null) {
-                    fakeApp.publicSourceDir = realApp.publicSourceDir;
-                }
-                if (fakeApp.dataDir == null) {
-                    fakeApp.dataDir = realApp.dataDir;
-                }
-                if (fakeApp.nativeLibraryDir == null) {
-                    fakeApp.nativeLibraryDir = realApp.nativeLibraryDir;
-                }
-                if (fakeApp.targetSdkVersion == 0) {
-                    fakeApp.targetSdkVersion = realApp.targetSdkVersion;
-                }
-            } catch (Throwable ignored) {
-            }
         }
     }
 
@@ -562,7 +197,6 @@ public class IPackageManagerProxy extends BinderInvocationStub {
             if (providerInfo != null)
                 return providerInfo;
             if (AppSystemEnv.isOpenPackage(componentName)) {
-                MethodParameterUtils.replaceUserIdIfNeeded(args, args.length - 1);
                 return method.invoke(who, args);
             }
             return null;
@@ -579,7 +213,6 @@ public class IPackageManagerProxy extends BinderInvocationStub {
             if (receiverInfo != null)
                 return receiverInfo;
             if (AppSystemEnv.isOpenPackage(componentName)) {
-                MethodParameterUtils.replaceUserIdIfNeeded(args, args.length - 1);
                 return method.invoke(who, args);
             }
             return null;
@@ -596,7 +229,6 @@ public class IPackageManagerProxy extends BinderInvocationStub {
             if (activityInfo != null)
                 return activityInfo;
             if (AppSystemEnv.isOpenPackage(componentName)) {
-                MethodParameterUtils.replaceUserIdIfNeeded(args, args.length - 1);
                 return method.invoke(who, args);
             }
             return null;
@@ -614,7 +246,6 @@ public class IPackageManagerProxy extends BinderInvocationStub {
             if (serviceInfo != null)
                 return serviceInfo;
             if (AppSystemEnv.isOpenPackage(componentName)) {
-                MethodParameterUtils.replaceUserIdIfNeeded(args, args.length - 1);
                 return method.invoke(who, args);
             }
             return null;
@@ -651,10 +282,6 @@ public class IPackageManagerProxy extends BinderInvocationStub {
 
             int flags = MethodParameterUtils.toInt(args[1]);
 
-            if (shouldHideHostSamsungAccountForSamsungHealth(packageName)) {
-                return null;
-            }
-
 
 
             ApplicationInfo applicationInfo = BlackBoxCore.getBPackageManager().getApplicationInfo(packageName, flags, BlackBoxCore.getUserId());
@@ -662,7 +289,6 @@ public class IPackageManagerProxy extends BinderInvocationStub {
                 return applicationInfo;
             }
             if (AppSystemEnv.isOpenPackage(packageName)) {
-                MethodParameterUtils.replaceUserIdIfNeeded(args, args.length - 1);
                 return method.invoke(who, args);
             }
             return null;
@@ -680,56 +306,6 @@ public class IPackageManagerProxy extends BinderInvocationStub {
         }
     }
 
-    @ProxyMethod("queryIntentActivities")
-    public static class QueryIntentActivities extends MethodHook {
-        @Override
-        @SuppressWarnings("unchecked")
-        protected Object hook(Object who, Method method, Object[] args) throws Throwable {
-            Intent intent = MethodParameterUtils.getFirstParam(args, Intent.class);
-            String type = MethodParameterUtils.getFirstParam(args, String.class);
-            Integer flags = MethodParameterUtils.getFirstParam(args, Integer.class);
-
-            List<ResolveInfo> resolves = BlackBoxCore.getBPackageManager()
-                    .queryIntentActivities(intent, flags, type, BActivityThread.getUserId());
-
-            if (resolves != null && !resolves.isEmpty()) {
-                if (shouldHideHostSamsungAccountForSamsungHealthCaller()) {
-                    resolves = filterOutSamsungAccountActivities(resolves);
-                }
-                if (BuildCompat.isN()) {
-                    return ParceledListSliceCompat.create(resolves);
-                }
-                return resolves;
-            }
-
-            MethodParameterUtils.replaceUserIdIfNeeded(args, args.length - 1);
-            Object hostOut = method.invoke(who, args);
-
-            if (!shouldHideHostSamsungAccountForSamsungHealthCaller()) {
-                return hostOut;
-            }
-
-            List<ResolveInfo> hostList = null;
-            if (hostOut instanceof List) {
-                hostList = (List<ResolveInfo>) hostOut;
-            } else if (ParceledListSliceCompat.isParceledListSlice(hostOut)) {
-                try {
-                    hostList = Reflector.with(hostOut).method("getList").call();
-                } catch (Throwable ignored) {
-                }
-            }
-
-            hostList = filterOutSamsungAccountActivities(hostList);
-            if (hostList == null) {
-                return hostOut;
-            }
-            if (BuildCompat.isN()) {
-                return ParceledListSliceCompat.create(hostList);
-            }
-            return hostList;
-        }
-    }
-
     @ProxyMethod("queryIntentReceivers")
     public static class QueryBroadcastReceivers extends MethodHook {
         @Override
@@ -738,7 +314,7 @@ public class IPackageManagerProxy extends BinderInvocationStub {
             String type = MethodParameterUtils.getFirstParam(args, String.class);
             Integer flags = MethodParameterUtils.getFirstParam(args, Integer.class);
             List<ResolveInfo> resolves = BlackBoxCore.getBPackageManager().queryBroadcastReceivers(intent, flags, type, BActivityThread.getUserId());
-            Slog.d(TAG, "queryIntentReceivers count=" + (resolves == null ? 0 : resolves.size()));
+            Slog.d(TAG, "queryIntentReceivers: " + resolves);
 
             
             if (BuildCompat.isN()) {
@@ -756,21 +332,8 @@ public class IPackageManagerProxy extends BinderInvocationStub {
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
             String authority = (String) args[0];
             int flags = MethodParameterUtils.toInt(args[1]);
-            if (BlackBoxMediaContract.PUBLIC_AUTHORITY.equals(authority)) {
-                ProviderInfo providerInfo = BlackBoxCore.getPackageManager()
-                        .resolveContentProvider(BlackBoxCore.getHostPkg() + ".blackbox.MediaProvider", flags);
-                if (providerInfo != null) {
-                    providerInfo = new ProviderInfo(providerInfo);
-                    providerInfo.authority = BlackBoxMediaContract.PUBLIC_AUTHORITY;
-                    return providerInfo;
-                }
-            }
             ProviderInfo providerInfo = BlackBoxCore.getBPackageManager().resolveContentProvider(authority, flags, BActivityThread.getUserId());
             if (providerInfo == null) {
-                providerInfo = BlackBoxCore.getPackageManager().resolveContentProvider(authority, flags);
-                if (providerInfo != null && AppSystemEnv.isOpenPackage(providerInfo.packageName)) {
-                    return providerInfo;
-                }
                 return method.invoke(who, args);
             }
             return providerInfo;

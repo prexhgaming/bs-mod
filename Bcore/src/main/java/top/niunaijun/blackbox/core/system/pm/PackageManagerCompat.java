@@ -17,7 +17,6 @@ import android.content.res.AssetManager;
 import android.content.res.Resources;
 import android.os.Build;
 
-import java.lang.reflect.Method;
 import java.util.HashSet;
 import java.util.Set;
 
@@ -30,8 +29,8 @@ import top.niunaijun.blackbox.BlackBoxCore;
 import top.niunaijun.blackbox.core.env.AppSystemEnv;
 import top.niunaijun.blackbox.core.env.BEnvironment;
 import top.niunaijun.blackbox.entity.pm.InstallOption;
-import top.niunaijun.blackbox.utils.BzArrayUtils;
-import top.niunaijun.blackbox.utils.BzFileUtils;
+import top.niunaijun.blackbox.utils.ArrayUtils;
+import top.niunaijun.blackbox.utils.FileUtils;
 import top.niunaijun.blackbox.utils.compat.BuildCompat;
 
 
@@ -100,7 +99,7 @@ public class PackageManagerCompat {
                     final BPackage.Activity a = p.activities.get(i);
                     res[num++] = generateActivityInfo(a, flags, state, userId);
                 }
-                pi.activities = BzArrayUtils.trimToSize(res, num);
+                pi.activities = ArrayUtils.trimToSize(res, num);
             }
         }
         if ((flags & PackageManager.GET_RECEIVERS) != 0) {
@@ -113,7 +112,7 @@ public class PackageManagerCompat {
                     final BPackage.Activity a = p.receivers.get(i);
                     res[num++] = generateActivityInfo(a, flags, state, userId);
                 }
-                pi.receivers = BzArrayUtils.trimToSize(res, num);
+                pi.receivers = ArrayUtils.trimToSize(res, num);
             }
         }
         if ((flags & PackageManager.GET_SERVICES) != 0) {
@@ -135,7 +134,7 @@ public class PackageManagerCompat {
                         res[num++] = serviceInfo;
                     }
                 }
-                pi.services = BzArrayUtils.trimToSize(res, num);
+                pi.services = ArrayUtils.trimToSize(res, num);
             }
         }
         if ((flags & PackageManager.GET_PROVIDERS) != 0) {
@@ -151,7 +150,7 @@ public class PackageManagerCompat {
                         res[num++] = providerInfo;
                     }
                 }
-                pi.providers = BzArrayUtils.trimToSize(res, num);
+                pi.providers = ArrayUtils.trimToSize(res, num);
             }
         }
         if ((flags & PackageManager.GET_INSTRUMENTATION) != 0) {
@@ -225,19 +224,6 @@ public class PackageManagerCompat {
         ai.metaData = a.metaData;
         ai.processName = BPackageManagerService.fixProcessName(ai.packageName, ai.processName);
         ai.applicationInfo = generateApplicationInfo(a.owner, flags, state, userId);
-
-        // Activity-alias support: some apps (e.g., Instagram) use <activity-alias android:name=".InternalLauncher"
-        // with android:targetActivity pointing at the real Activity class.
-        // If we return the alias name as the class to instantiate, ActivityThread will crash with CNFE.
-        if (ai.targetActivity != null && !ai.targetActivity.isEmpty()) {
-            String target = ai.targetActivity;
-            if (target.startsWith(".")) {
-                target = ai.packageName + target;
-            } else if (target.indexOf('.') < 0) {
-                target = ai.packageName + "." + target;
-            }
-            ai.name = target;
-        }
         return ai;
     }
 
@@ -319,7 +305,6 @@ public class PackageManagerCompat {
         ai.publicSourceDir = sourceDir;
         ai.sourceDir = sourceDir;
         ai.uid = p.mExtras.appId;
-        hydrateSplitApkPathsFromHost(ai);
 
 
         if (BuildCompat.isL()) {
@@ -347,59 +332,6 @@ public class PackageManagerCompat {
         return ai;
     }
 
-    private static void hydrateSplitApkPathsFromHost(ApplicationInfo ai) {
-        if (ai == null) {
-            return;
-        }
-        if (ai.splitSourceDirs != null && ai.splitSourceDirs.length > 0) {
-            return;
-        }
-
-        try {
-            ApplicationInfo hostAi = resolveHostInstalledApplicationInfo(ai.packageName);
-            if (hostAi == null || hostAi.splitSourceDirs == null || hostAi.splitSourceDirs.length == 0) {
-                return;
-            }
-
-            ai.splitSourceDirs = hostAi.splitSourceDirs;
-            ai.splitPublicSourceDirs = hostAi.splitPublicSourceDirs != null
-                    ? hostAi.splitPublicSourceDirs
-                    : hostAi.splitSourceDirs;
-            ai.splitNames = hostAi.splitNames;
-        } catch (Throwable ignored) {
-        }
-    }
-
-    private static ApplicationInfo resolveHostInstalledApplicationInfo(String packageName) {
-        if (packageName == null) {
-            return null;
-        }
-
-        PackageManager pm = BlackBoxCore.getPackageManager();
-        if (pm == null) {
-            return null;
-        }
-
-        int hostUserId = BlackBoxCore.getHostUserId();
-        if (hostUserId >= 0) {
-            try {
-                Method asUser = pm.getClass().getMethod("getApplicationInfoAsUser", String.class, int.class, int.class);
-                asUser.setAccessible(true);
-                Object info = asUser.invoke(pm, packageName, 0, hostUserId);
-                if (info instanceof ApplicationInfo) {
-                    return (ApplicationInfo) info;
-                }
-            } catch (Throwable ignored) {
-            }
-        }
-
-        try {
-            return pm.getApplicationInfo(packageName, 0);
-        } catch (Throwable ignored) {
-            return null;
-        }
-    }
-
     private static boolean checkUseInstalledOrHidden(int flags, BPackageUserState state,
                                                      ApplicationInfo appInfo) {
         if (AppSystemEnv.isBlackPackage(appInfo.packageName))
@@ -416,7 +348,7 @@ public class PackageManagerCompat {
         String APACHE_LEGACY_JAR_Q = "/system/framework/org.apache.http.legacy.jar";
         Set<String> sharedLibraryFileList = new HashSet<>();
         if (BuildCompat.isQ()) {
-            if (!BzFileUtils.isExist(APACHE_LEGACY_JAR_Q)) {
+            if (!FileUtils.isExist(APACHE_LEGACY_JAR_Q)) {
                 sharedLibraryFileList.add(APACHE_LEGACY_JAR);
             } else {
                 sharedLibraryFileList.add(APACHE_LEGACY_JAR_Q);

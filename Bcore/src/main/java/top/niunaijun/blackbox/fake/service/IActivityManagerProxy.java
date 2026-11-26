@@ -12,7 +12,6 @@ import android.content.pm.ProviderInfo;
 import android.content.pm.ResolveInfo;
 import android.os.IBinder;
 import android.os.IInterface;
-import android.text.TextUtils;
 import android.util.Log;
 
 import java.lang.ref.WeakReference;
@@ -22,19 +21,16 @@ import java.util.Objects;
 
 import black.android.app.BRActivityManagerNative;
 import black.android.app.BRActivityManagerOreo;
-import black.android.app.BRIActivityManagerContentProviderHolder;
 import black.android.app.BRLoadedApkReceiverDispatcher;
 import black.android.app.BRLoadedApkReceiverDispatcherInnerReceiver;
 import black.android.app.BRLoadedApkServiceDispatcher;
 import black.android.app.BRLoadedApkServiceDispatcherInnerConnection;
-import black.android.content.BRContentProviderHolderOreo;
 import black.android.content.BRContentProviderNative;
 import black.android.content.pm.BRUserInfo;
 import black.android.util.BRSingleton;
 import top.niunaijun.blackbox.BlackBoxCore;
 import top.niunaijun.blackbox.app.BActivityThread;
 import top.niunaijun.blackbox.core.env.AppSystemEnv;
-import top.niunaijun.blackbox.core.env.SamsungHealthCompat;
 import top.niunaijun.blackbox.entity.AppConfig;
 import top.niunaijun.blackbox.entity.am.RunningAppProcessInfo;
 import top.niunaijun.blackbox.entity.am.RunningServiceInfo;
@@ -49,8 +45,6 @@ import top.niunaijun.blackbox.fake.hook.ProxyMethod;
 import top.niunaijun.blackbox.fake.hook.ScanClass;
 import top.niunaijun.blackbox.fake.service.base.PkgMethodProxy;
 import top.niunaijun.blackbox.fake.service.context.providers.ContentProviderStub;
-import top.niunaijun.blackbox.fake.service.context.providers.VirtualMediaProviderStub;
-import top.niunaijun.blackbox.media.BlackBoxMediaContract;
 import top.niunaijun.blackbox.proxy.ProxyManifest;
 import top.niunaijun.blackbox.proxy.record.ProxyBroadcastRecord;
 import top.niunaijun.blackbox.proxy.record.ProxyPendingRecord;
@@ -71,10 +65,6 @@ import static android.content.pm.PackageManager.PERMISSION_GRANTED;
 @ScanClass(ActivityManagerCommonProxy.class)
 public class IActivityManagerProxy extends ClassInvocationStub {
     public static final String TAG = "ActivityManagerStub";
-
-    private static final String PKG_SAMSUNG_HEALTH = "com.sec.android.app.shealth";
-    private static final String PKG_SAMSUNG_ACCOUNT = "com.osp.app.signin";
-    private static final String AUTH_SAMSUNG_ACCOUNT_MANAGER_PROVIDER = "com.samsung.android.samsungaccount.accountmanagerprovider";
 
     @Override
     protected Object getWho() {
@@ -155,61 +145,6 @@ public class IActivityManagerProxy extends ClassInvocationStub {
                     args[1] = BlackBoxCore.getHostPkg();
                 }
 
-                if ("media".equals(auth)) {
-                    args[authIndex] = ProxyManifest.getMediaProviderAuthority();
-                    content = method.invoke(who, args);
-                    if (content != null) {
-                        ProviderInfo providerInfo = BlackBoxCore.getPackageManager()
-                                .resolveContentProvider(ProxyManifest.getMediaProviderAuthority(), GET_META_DATA);
-                        if (providerInfo != null) {
-                            providerInfo = new ProviderInfo(providerInfo);
-                            providerInfo.authority = BlackBoxMediaContract.PUBLIC_AUTHORITY;
-                            Reflector.with(content).field("info").set(providerInfo);
-                        }
-
-                        IInterface provider = BuildCompat.isOreo()
-                                ? BRContentProviderHolderOreo.get(content).provider()
-                                : BRIActivityManagerContentProviderHolder.get(content).provider();
-                        if (provider != null) {
-                            IInterface wrapped = new VirtualMediaProviderStub().wrapper(provider, BlackBoxCore.getHostPkg());
-                            if (BuildCompat.isOreo()) {
-                                BRContentProviderHolderOreo.get(content)._set_provider(wrapped);
-                            } else {
-                                BRIActivityManagerContentProviderHolder.get(content)._set_provider(wrapped);
-                            }
-                        }
-                    }
-                    return content;
-                }
-
-                ProviderInfo openHostProviderInfo = BlackBoxCore.getPackageManager()
-                        .resolveContentProvider((String) auth, GET_META_DATA);
-                if (openHostProviderInfo != null
-                        && AppSystemEnv.isOpenPackage(openHostProviderInfo.packageName)) {
-                    // Default Samsung Health behavior should not use the phone's Samsung Account
-                    // app/provider. Allow it only when the per-app fallback toggle is enabled.
-                    try {
-                        String callerPackage = BActivityThread.getAppPackageName();
-                        if (PKG_SAMSUNG_HEALTH.equals(callerPackage)
-                                && AUTH_SAMSUNG_ACCOUNT_MANAGER_PROVIDER.equals(auth)
-                                && PKG_SAMSUNG_ACCOUNT.equals(openHostProviderInfo.packageName)
-                                && !SamsungHealthCompat.isHostSamsungAccountFallbackEnabled(BActivityThread.getUserId(), callerPackage)) {
-                            Slog.w(TAG, "Blocked open host provider for Samsung Health (fallback disabled): "
-                                    + auth + " -> " + openHostProviderInfo.packageName);
-                            return null;
-                        }
-                    } catch (Throwable ignored) {
-                    }
-
-                    content = method.invoke(who, args);
-                    if (content != null) {
-                        ContentProviderDelegate.update(content, (String) auth);
-                    }
-                    Slog.d(TAG, "Passing through open host provider: " + auth
-                            + " -> " + openHostProviderInfo.packageName);
-                    return content;
-                }
-
                 if (auth.equals("settings")
                         || auth.equals("media")
                         || auth.equals("telephony")
@@ -278,42 +213,6 @@ public class IActivityManagerProxy extends ClassInvocationStub {
 
         protected int getUserIndex() {
             return getAuthIndex() + 1;
-        }
-    }
-
-    @ProxyMethod("isBackgroundRestricted")
-    public static class IsBackgroundRestricted extends MethodHook {
-        @Override
-        protected Object hook(Object who, Method method, Object[] args) throws Throwable {
-            try {
-                if (args != null) {
-                    for (int i = 0; i < args.length; i++) {
-                        if (args[i] instanceof String) {
-                            String pkg = (String) args[i];
-                            String hostPkg = BlackBoxCore.getHostPkg();
-                            String vPkg = BActivityThread.getAppPackageName();
-                            if (!TextUtils.isEmpty(pkg)
-                                    && !TextUtils.isEmpty(hostPkg)
-                                    && Objects.equals(pkg, vPkg)
-                                    && !Objects.equals(pkg, hostPkg)) {
-                                args[i] = hostPkg;
-                            }
-                            break;
-                        }
-                    }
-                }
-                return method.invoke(who, args);
-            } catch (Throwable e) {
-                Throwable cause = e.getCause() != null ? e.getCause() : e;
-                if (cause instanceof IllegalArgumentException) {
-                    String msg = cause.getMessage();
-                    if (msg != null && msg.contains("cannot query restriction state")) {
-                        Slog.w(TAG, "UID/package mismatch in isBackgroundRestricted, returning false: " + msg);
-                        return false;
-                    }
-                }
-                throw e;
-            }
         }
     }
 
@@ -527,13 +426,6 @@ public class IActivityManagerProxy extends ClassInvocationStub {
     public static class bindServiceInstance extends MethodHook {
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
-            if (args != null && args.length > 6) {
-                // Android 14+/16 rejects instance names for normal non-isolated
-                // proxy services. Our proxy layer already multiplexes by extras,
-                // so keep the sandbox bind path and strip the framework-level
-                // instance token before the real bind.
-                args[6] = null;
-            }
             return BindServiceCommon(who,method,args,7);
         }
 
@@ -611,14 +503,6 @@ public class IActivityManagerProxy extends ClassInvocationStub {
             Intent[] intents = (Intent[]) args[getIntentsIndex(args)];
             MethodParameterUtils.replaceFirstAppPkg(args);
 
-            int hostUserId = BlackBoxCore.getHostUserId();
-            if (hostUserId != 0 && args.length > 0 && args[args.length - 1] instanceof Integer) {
-                int userId = (int) args[args.length - 1];
-                if (userId == 0 || userId == -1) {
-                    args[args.length - 1] = hostUserId;
-                }
-            }
-
             for (int i = 0; i < intents.length; i++) {
                 Intent intent = intents[i];
                 switch (type) {
@@ -689,17 +573,6 @@ public class IActivityManagerProxy extends ClassInvocationStub {
     public static class BroadcastIntent extends MethodHook {
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
-            int hostUserId = BlackBoxCore.getHostUserId();
-            if (hostUserId != 0 && args != null && args.length > 0) {
-                int lastIndex = args.length - 1;
-                if (args[lastIndex] instanceof Integer) {
-                    int userId = (int) args[lastIndex];
-                    if (userId == 0) {
-                        args[lastIndex] = hostUserId;
-                    }
-                }
-            }
-
             int intentIndex = getIntentIndex(args);
             Intent intent = (Intent) args[intentIndex];
             String resolvedType = (String) args[intentIndex + 1];
@@ -786,16 +659,6 @@ public class IActivityManagerProxy extends ClassInvocationStub {
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
             MethodParameterUtils.replaceFirstAppPkg(args);
-
-            int hostUserId = BlackBoxCore.getHostUserId();
-            int userIdIndex = getUserIdIndex();
-            if (hostUserId != 0 && userIdIndex >= 0 && userIdIndex < args.length && args[userIdIndex] instanceof Integer) {
-                int userId = (int) args[userIdIndex];
-                if (userId == 0 || userId == -1) {
-                    args[userIdIndex] = hostUserId;
-                }
-            }
-
             int receiverIndex = getReceiverIndex();
             if (args[receiverIndex] != null) {
                 IIntentReceiver intentReceiver = (IIntentReceiver) args[receiverIndex];
@@ -838,10 +701,6 @@ public class IActivityManagerProxy extends ClassInvocationStub {
             }
             return 5;
         }
-
-        public int getUserIdIndex() {
-            return getPermissionIndex() + 1;
-        }
     }
 
     
@@ -867,15 +726,6 @@ public class IActivityManagerProxy extends ClassInvocationStub {
             
             if (args[permissionIndex] != null) {
                 args[permissionIndex] = null;
-            }
-
-            int hostUserId = BlackBoxCore.getHostUserId();
-            int userIdIndex = permissionIndex + 1;
-            if (hostUserId != 0 && userIdIndex < args.length && args[userIdIndex] instanceof Integer) {
-                int userId = (int) args[userIdIndex];
-                if (userId == 0 || userId == -1) {
-                    args[userIdIndex] = hostUserId;
-                }
             }
             return method.invoke(who, args);
         }
@@ -903,17 +753,6 @@ public class IActivityManagerProxy extends ClassInvocationStub {
                 }
             }
             return method.invoke(who, args);
-        }
-    }
-
-    @ProxyMethod("updateServiceGroup")
-    public static class UpdateServiceGroup extends MethodHook {
-        @Override
-        protected Object hook(Object who, Method method, Object[] args) {
-            // Virtual service bindings are tracked by BlackBox, not the host AMS.
-            // Forwarding host-side group updates can fail with
-            // "Could not find connection for BinderProxy" on Android 16.
-            return null;
         }
     }
 

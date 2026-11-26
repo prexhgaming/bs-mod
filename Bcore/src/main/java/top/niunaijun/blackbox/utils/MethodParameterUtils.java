@@ -12,7 +12,7 @@ public class MethodParameterUtils {
         if (args == null) {
             return null;
         }
-        int index = BzArrayUtils.indexOfFirst(args, tClass);
+        int index = ArrayUtils.indexOfFirst(args, tClass);
         if (index != -1) {
             return (T) args[index];
         }
@@ -65,7 +65,7 @@ public class MethodParameterUtils {
     }
 
     public static void replaceLastUid(Object[] args) {
-        int index = BzArrayUtils.indexOfLast(args, Integer.class);
+        int index = ArrayUtils.indexOfLast(args, Integer.class);
         if (index != -1) {
             int uid = (int) args[index];
             if (uid == BlackBoxCore.getBUid()) {
@@ -75,7 +75,7 @@ public class MethodParameterUtils {
     }
 
     public static String replaceLastAppPkg(Object[] args) {
-        int index = BzArrayUtils.indexOfLast(args, String.class);
+        int index = ArrayUtils.indexOfLast(args, String.class);
         if (index != -1) {
             String pkg = (String) args[index];
             if (BlackBoxCore.get().isInstalled(pkg, BlackBoxCore.getUserId())) {
@@ -87,7 +87,7 @@ public class MethodParameterUtils {
     }
 
     public static String replaceSequenceAppPkg(Object[] args, int sequence) {
-        int index = BzArrayUtils.indexOf(args, String.class, sequence);
+        int index = ArrayUtils.indexOf(args, String.class, sequence);
         if (index != -1) {
             String pkg = (String) args[index];
             if (BlackBoxCore.get().isInstalled(pkg, BlackBoxCore.getUserId())) {
@@ -149,18 +149,5 @@ public class MethodParameterUtils {
             return ((Long) obj).intValue();
         }
         return (int)obj;
-    }
-
-    public static void replaceUserIdIfNeeded(Object[] args, int index) {
-        if (args == null || index < 0 || index >= args.length) {
-            return;
-        }
-        if (args[index] instanceof Integer) {
-            int userId = (Integer) args[index];
-            int hostUserId = BlackBoxCore.getHostUserId();
-            if (userId == 0 && hostUserId != 0) {
-                args[index] = hostUserId;
-            }
-        }
     }
 }

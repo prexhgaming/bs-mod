@@ -22,11 +22,7 @@ public class BStorageManager extends BlackManager<IBStorageManagerService> {
 
     public StorageVolume[] getVolumeList(int uid, String packageName, int flags, int userId) {
         try {
-            IBStorageManagerService service = getService();
-            if (service == null) {
-                return new StorageVolume[]{};
-            }
-            return service.getVolumeList(uid, packageName, flags, userId);
+            return getService().getVolumeList(uid, packageName, flags, userId);
         } catch (RemoteException e) {
             e.printStackTrace();
         }

@@ -1,13 +1,20 @@
 package black.android.location;
 
+
 import top.niunaijun.blackreflection.annotation.BClassName;
 import top.niunaijun.blackreflection.annotation.BField;
 import top.niunaijun.blackreflection.annotation.BMethod;
 
-@BClassName("top.niunaijun.blackbox.compat.location.BzRoutePassport")
-public interface BzRoutePassportL {
+@BClassName("android.location.LocationRequest")
+public interface LocationRequestL {
     @BField
-    String provider();
+    boolean mHideFromAppOps();
+
+    @BField
+    String mProvider();
+
+    @BField
+    Object mWorkSource();
 
     @BMethod
     String getProvider();

@@ -20,7 +20,7 @@ import top.niunaijun.blackbox.core.env.BEnvironment;
 import top.niunaijun.blackbox.core.system.BProcessManagerService;
 import top.niunaijun.blackbox.core.system.user.BUserHandle;
 import top.niunaijun.blackbox.entity.pm.InstallOption;
-import top.niunaijun.blackbox.utils.BzFileUtils;
+import top.niunaijun.blackbox.utils.FileUtils;
 import top.niunaijun.blackbox.utils.Slog;
 import top.niunaijun.blackbox.utils.compat.PackageParserCompat;
 
@@ -126,7 +126,7 @@ import top.niunaijun.blackbox.utils.compat.PackageParserCompat;
             parcel.writeMap(mAppIds);
 
             fileOutputStream = atomicFile.startWrite();
-            BzFileUtils.writeParcelToOutput(parcel, fileOutputStream);
+            FileUtils.writeParcelToOutput(parcel, fileOutputStream);
             atomicFile.finishWrite(fileOutputStream);
         } catch (Exception e) {
             e.printStackTrace();
@@ -139,7 +139,7 @@ import top.niunaijun.blackbox.utils.compat.PackageParserCompat;
     private void loadUidLP() {
         Parcel parcel = Parcel.obtain();
         try {
-            byte[] uidBytes = BzFileUtils.toByteArray(BEnvironment.getUidConf());
+            byte[] uidBytes = FileUtils.toByteArray(BEnvironment.getUidConf());
             if (uidBytes == null || uidBytes.length == 0) {
                 
                 return;
@@ -176,7 +176,7 @@ import top.niunaijun.blackbox.utils.compat.PackageParserCompat;
     public void scanPackage() {
         synchronized (mPackages) {
             File appRootDir = BEnvironment.getAppRootDir();
-            BzFileUtils.mkdirs(appRootDir);
+            FileUtils.mkdirs(appRootDir);
             File[] apps = appRootDir.listFiles();
             for (File app : apps) {
                 if (!app.isDirectory()) {
@@ -198,7 +198,7 @@ import top.niunaijun.blackbox.utils.compat.PackageParserCompat;
         Parcel packageSettingsIn = Parcel.obtain();
         File packageConf = BEnvironment.getPackageConf(packageName);
         try {
-            byte[] bPackageSettingsBytes = BzFileUtils.toByteArray(packageConf);
+            byte[] bPackageSettingsBytes = FileUtils.toByteArray(packageConf);
 
             packageSettingsIn.unmarshall(bPackageSettingsBytes, 0, bPackageSettingsBytes.length);
             packageSettingsIn.setDataPosition(0);
@@ -223,7 +223,7 @@ import top.niunaijun.blackbox.utils.compat.PackageParserCompat;
         } catch (Throwable e) {
             e.printStackTrace();
             
-            BzFileUtils.deleteDir(app);
+            FileUtils.deleteDir(app);
             removePackage(packageName);
             BProcessManagerService.get().killAllByPackageName(packageName);
             BPackageManagerService.get().onPackageUninstalled(packageName, true, BUserHandle.USER_ALL);

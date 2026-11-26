@@ -38,7 +38,6 @@ import top.niunaijun.blackbox.proxy.ProxyActivity;
 import top.niunaijun.blackbox.proxy.ProxyManifest;
 import top.niunaijun.blackbox.proxy.record.ProxyActivityRecord;
 import top.niunaijun.blackbox.utils.ComponentUtils;
-import top.niunaijun.blackbox.utils.IntentSanitizer;
 import top.niunaijun.blackbox.utils.Slog;
 import top.niunaijun.blackbox.utils.compat.ActivityManagerCompat;
 
@@ -347,14 +346,12 @@ public class ActivityStack {
             assert resources != null;
             typedArray = resources.newTheme().obtainStyledAttributes(id, BRRstyleable.get().Window());
             boolean windowIsTranslucent = typedArray.getBoolean(BRRstyleable.get().Window_windowIsTranslucent(), false);
-            boolean forceOpaqueProxy = shouldForceOpaqueProxy(activityInfo);
-            if (windowIsTranslucent && !forceOpaqueProxy) {
+            if (windowIsTranslucent) {
                 shadow.setComponent(new ComponentName(BlackBoxCore.getHostPkg(), ProxyManifest.TransparentProxyActivity(vpid)));
             } else {
                 shadow.setComponent(new ComponentName(BlackBoxCore.getHostPkg(), ProxyManifest.getProxyActivity(vpid)));
             }
-            Slog.d(TAG, activityInfo + ", windowIsTranslucent: " + windowIsTranslucent
-                    + ", forceOpaqueProxy: " + forceOpaqueProxy);
+            Slog.d(TAG, activityInfo + ", windowIsTranslucent: " + windowIsTranslucent);
         } catch (Throwable e) {
             e.printStackTrace();
             shadow.setComponent(new ComponentName(BlackBoxCore.getHostPkg(), ProxyManifest.getProxyActivity(vpid)));
@@ -363,21 +360,8 @@ public class ActivityStack {
                 typedArray.recycle();
             }
         }
-        IntentSanitizer.sanitizeClassExtrasForIpc(intent);
         ProxyActivityRecord.saveStub(shadow, intent, target.mActivityInfo, target.mActivityRecord, target.mUserId);
         return shadow;
-    }
-
-    private boolean shouldForceOpaqueProxy(ActivityInfo activityInfo) {
-        if (activityInfo == null) {
-            return false;
-        }
-
-        // Samsung Health's sign-in authenticator declares a translucent window, but
-        // running it through TransparentProxyActivity leaves the proxy task top-resumed
-        // while the real auth windows are focused. That stalls the sign-in flow.
-        return "com.sec.android.app.shealth".equals(activityInfo.packageName)
-                && "com.samsung.android.app.shealth.accounts.AuthenticatorActivity".equals(activityInfo.name);
     }
 
     private void finishAllActivity(int userId) {
@@ -533,15 +517,8 @@ public class ActivityStack {
                 if (resultTo != null) {
                     return resultTo.info.packageName;
                 }
-                // Privacy: if we can't resolve the "resultTo" link, fall back to the
-                // current virtual activity package rather than leaking the host package.
-                if (activityRecordByToken.info != null && activityRecordByToken.info.packageName != null) {
-                    return activityRecordByToken.info.packageName;
-                }
             }
-            // Android returns null when there is no calling activity. Returning the
-            // host package here only leaks host identity without helping the guest.
-            return BlackBoxCore.getAppPackageName();
+            return BlackBoxCore.getHostPkg();
         }
     }
 
@@ -554,16 +531,8 @@ public class ActivityStack {
                 if (resultTo != null) {
                     return resultTo.component;
                 }
-                // Privacy: fall back to the current virtual activity (best-effort).
-                if (activityRecordByToken.component != null) {
-                    return activityRecordByToken.component;
-                }
             }
-            String appPkg = BlackBoxCore.getAppPackageName();
-            if (appPkg != null) {
-                return new ComponentName(appPkg, ProxyActivity.P0.class.getName());
-            }
-            return null;
+            return new ComponentName(BlackBoxCore.getHostPkg(), ProxyActivity.P0.class.getName());
         }
     }
 

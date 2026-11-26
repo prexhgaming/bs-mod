@@ -19,7 +19,6 @@ import top.niunaijun.blackbox.fake.hook.BinderInvocationStub;
 import top.niunaijun.blackbox.fake.hook.ScanClass;
 import top.niunaijun.blackbox.fake.hook.MethodHook;
 import top.niunaijun.blackbox.fake.hook.ProxyMethod;
-import top.niunaijun.blackbox.utils.MethodParameterUtils;
 import top.niunaijun.blackbox.utils.Slog;
 
 
@@ -333,7 +332,6 @@ public class IConnectivityManagerProxy extends BinderInvocationStub {
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
             if (android.os.Build.VERSION.SDK_INT >= 21) {
                 try {
-                    MethodParameterUtils.replaceFirstAppPkg(args);
                     
                     Object result = method.invoke(who, args);
                     if (result != null) {
@@ -556,29 +554,6 @@ public class IConnectivityManagerProxy extends BinderInvocationStub {
                 Slog.w(TAG, "Could not create NetworkRequest fallback: " + e.getMessage());
             }
             return null;
-        }
-    }
-
-    /**
-     * GMS drives its connectivity state machine through network callbacks
-     * (com.google.android.gms.gcm.connection.ConnectivityManagerVariantImplAsync),
-     * and ConnectivityManager.registerNetworkCallback() ends up here.
-     *
-     * The real ConnectivityService checks that the callingPackage argument belongs
-     * to the caller's uid. Inside the sandbox the caller *is* the host uid while the
-     * argument says com.google.android.gms, which that uid does not own, so the call
-     * throws "SecurityException: Package com.google.android.gms does not belong to
-     * <uid>" and GMS never learns whether the network is up.
-     *
-     * Rewriting the package argument to the host package is what the rest of these
-     * proxies already do; listenForNetwork simply was never hooked.
-     */
-    @ProxyMethod("listenForNetwork")
-    public static class ListenForNetwork extends MethodHook {
-        @Override
-        protected Object hook(Object who, Method method, Object[] args) throws Throwable {
-            MethodParameterUtils.replaceFirstAppPkg(args);
-            return method.invoke(who, args);
         }
     }
 

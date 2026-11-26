@@ -6,19 +6,16 @@ import java.lang.reflect.Method;
 
 import black.android.content.BRAttributionSource;
 import top.niunaijun.blackbox.BlackBoxCore;
-import top.niunaijun.blackbox.app.BActivityThread;
 import top.niunaijun.blackbox.fake.hook.ClassInvocationStub;
 import top.niunaijun.blackbox.utils.compat.ContextCompat;
 
 
 public class SystemProviderStub extends ClassInvocationStub implements BContentProvider {
     private IInterface mBase;
-    private String mAppPkg;
 
     @Override
     public IInterface wrapper(IInterface contentProviderProxy, String appPkg) {
         mBase = contentProviderProxy;
-        mAppPkg = appPkg;
         injectHook();
         return (IInterface) getProxyInvocation();
     }
@@ -62,12 +59,7 @@ public class SystemProviderStub extends ClassInvocationStub implements BContentP
                     
                     if (arg != null && attributionSourceClass != null && 
                             arg.getClass().getName().equals(attributionSourceClass.getName())) {
-                        int uid = BActivityThread.getUid();
-                        if (uid <= 0) {
-                            uid = BlackBoxCore.getHostUid();
-                        }
-                        String pkg = mAppPkg != null ? mAppPkg : BlackBoxCore.getHostPkg();
-                        ContextCompat.fixAttributionSourceState(arg, pkg, uid);
+                        ContextCompat.fixAttributionSourceState(arg, BlackBoxCore.getHostUid());
                     }
                 }
             }
@@ -87,12 +79,7 @@ public class SystemProviderStub extends ClassInvocationStub implements BContentP
                 Class<?> attrSourceClass = BRAttributionSource.getRealClass();
                 
                 if (attrSourceClass != null && arg.getClass().getName().equals(attrSourceClass.getName())) {
-                    int uid = BActivityThread.getUid();
-                    if (uid <= 0) {
-                        uid = BlackBoxCore.getHostUid();
-                    }
-                    String pkg = mAppPkg != null ? mAppPkg : BlackBoxCore.getHostPkg();
-                    ContextCompat.fixAttributionSourceState(arg, pkg, uid);
+                    ContextCompat.fixAttributionSourceState(arg, BlackBoxCore.getHostUid());
                 }
             }
         }

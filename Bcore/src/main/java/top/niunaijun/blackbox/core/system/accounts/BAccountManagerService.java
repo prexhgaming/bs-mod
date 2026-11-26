@@ -64,9 +64,9 @@ import top.niunaijun.blackbox.core.system.ProcessRecord;
 import top.niunaijun.blackbox.core.system.pm.BPackageManagerService;
 import top.niunaijun.blackbox.core.system.pm.PackageMonitor;
 import top.niunaijun.blackbox.core.system.user.BUserHandle;
-import top.niunaijun.blackbox.utils.BzArrayUtils;
+import top.niunaijun.blackbox.utils.ArrayUtils;
 import top.niunaijun.blackbox.utils.CloseUtils;
-import top.niunaijun.blackbox.utils.BzFileUtils;
+import top.niunaijun.blackbox.utils.FileUtils;
 import top.niunaijun.blackbox.utils.Slog;
 import top.niunaijun.blackbox.utils.compat.AccountManagerCompat;
 
@@ -128,7 +128,7 @@ public class BAccountManagerService extends IBAccountManagerService.Stub impleme
                 return;
             }
             is = new FileInputStream(BEnvironment.getAccountsConf());
-            byte[] bytes = BzFileUtils.toByteArray(is);
+            byte[] bytes = FileUtils.toByteArray(is);
             parcel.unmarshall(bytes, 0, bytes.length);
             parcel.setDataPosition(0);
 
@@ -158,7 +158,7 @@ public class BAccountManagerService extends IBAccountManagerService.Stub impleme
                 parcel.writeMap(mUserAccountsMap);
                 try {
                     fileOutputStream = atomicFile.startWrite();
-                    BzFileUtils.writeParcelToOutput(parcel, fileOutputStream);
+                    FileUtils.writeParcelToOutput(parcel, fileOutputStream);
                     atomicFile.finishWrite(fileOutputStream);
                 } catch (IOException e) {
                     e.printStackTrace();
@@ -269,7 +269,7 @@ public class BAccountManagerService extends IBAccountManagerService.Stub impleme
         String opPackageName = getCallingPackageName();
 
         BUserAccounts userAccounts = getUserAccounts(userId);
-        if (BzArrayUtils.isEmpty(features)) {
+        if (ArrayUtils.isEmpty(features)) {
             Account[] accountsWithManagedNotVisible = getAccountsFromCache(
                     userAccounts, accountType, opPackageName,
                     true );

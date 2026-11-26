@@ -39,13 +39,4 @@ public class IGraphicsStatsProxy extends BinderInvocationStub {
             return method.invoke(who, args);
         }
     }
-
-    @ProxyMethod("requestRenderEngineFor")
-    public static class RequestRenderEngineFor extends MethodHook {
-        @Override
-        protected Object hook(Object who, Method method, Object[] args) throws Throwable {
-            MethodParameterUtils.replaceFirstAppPkg(args);
-            return method.invoke(who, args);
-        }
-    }
 }

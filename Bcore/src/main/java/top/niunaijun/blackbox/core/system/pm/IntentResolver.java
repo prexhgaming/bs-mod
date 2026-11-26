@@ -268,7 +268,7 @@ public abstract class IntentResolver<F extends BPackage.IntentInfo, R extends Ob
         final boolean debug = localLOGV ||
                 ((intent.getFlags() & Intent.FLAG_DEBUG_LOG_RESOLUTION) != 0);
 
-        BzFastImmutableArraySet<String> categories = getFastIntentCategories(intent);
+        FastImmutableArraySet<String> categories = getFastIntentCategories(intent);
         final String scheme = intent.getScheme();
         int N = listCut.size();
         for (int i = 0; i < N; ++i) {
@@ -352,7 +352,7 @@ public abstract class IntentResolver<F extends BPackage.IntentInfo, R extends Ob
             if (debug) Slog.v(TAG, "Action list: " + Arrays.toString(firstTypeCut));
         }
 
-        BzFastImmutableArraySet<String> categories = getFastIntentCategories(intent);
+        FastImmutableArraySet<String> categories = getFastIntentCategories(intent);
         if (firstTypeCut != null) {
             buildResolveList(intent, categories, debug, defaultOnly, resolvedType,
                     scheme, firstTypeCut, finalList, userId);
@@ -566,15 +566,15 @@ public abstract class IntentResolver<F extends BPackage.IntentInfo, R extends Ob
         }
     }
 
-    private static BzFastImmutableArraySet<String> getFastIntentCategories(Intent intent) {
+    private static FastImmutableArraySet<String> getFastIntentCategories(Intent intent) {
         final Set<String> categories = intent.getCategories();
         if (categories == null) {
             return null;
         }
-        return new BzFastImmutableArraySet<String>(categories.toArray(new String[categories.size()]));
+        return new FastImmutableArraySet<String>(categories.toArray(new String[categories.size()]));
     }
 
-    private void buildResolveList(Intent intent, BzFastImmutableArraySet<String> categories,
+    private void buildResolveList(Intent intent, FastImmutableArraySet<String> categories,
             boolean debug, boolean defaultOnly, String resolvedType, String scheme,
             F[] src, List<R> dest, int userId) {
         final String action = intent.getAction();

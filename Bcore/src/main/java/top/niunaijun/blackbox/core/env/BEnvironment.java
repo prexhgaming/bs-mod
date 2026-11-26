@@ -5,7 +5,7 @@ import java.util.Locale;
 
 import top.niunaijun.blackbox.BlackBoxCore;
 import top.niunaijun.blackbox.app.BActivityThread;
-import top.niunaijun.blackbox.utils.BzFileUtils;
+import top.niunaijun.blackbox.utils.FileUtils;
 
 
 public class BEnvironment {
@@ -16,11 +16,11 @@ public class BEnvironment {
     public static File EMPTY_JAR = new File(getCacheDir(), "empty.apk");
 
     public static void load() {
-        BzFileUtils.mkdirs(sVirtualRoot);
-        BzFileUtils.mkdirs(sExternalVirtualRoot);
-        BzFileUtils.mkdirs(getSystemDir());
-        BzFileUtils.mkdirs(getCacheDir());
-        BzFileUtils.mkdirs(getProcDir());
+        FileUtils.mkdirs(sVirtualRoot);
+        FileUtils.mkdirs(sExternalVirtualRoot);
+        FileUtils.mkdirs(getSystemDir());
+        FileUtils.mkdirs(getCacheDir());
+        FileUtils.mkdirs(getProcDir());
     }
 
     public static File getVirtualRoot() {
@@ -99,7 +99,7 @@ public class BEnvironment {
 
     public static File getProcDir(int pid) {
         File file = new File(getProcDir(), String.format(Locale.CHINA, "%d", pid));
-        BzFileUtils.mkdirs(file);
+        FileUtils.mkdirs(file);
         return file;
     }
 
@@ -137,10 +137,6 @@ public class BEnvironment {
 
     public static File getBaseApkDir(String packageName) {
         return new File(sVirtualRoot, "data/app/" + packageName + "/base.apk");
-    }
-
-    public static File getSplitApkDir(String packageName) {
-        return new File(getAppDir(packageName), "splits");
     }
 
     public static File getAppLibDir(String packageName) {

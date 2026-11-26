@@ -27,7 +27,7 @@ import top.niunaijun.blackbox.core.system.pm.BPackageManagerService;
 import top.niunaijun.blackbox.core.system.user.BUserHandle;
 import top.niunaijun.blackbox.entity.AppConfig;
 import top.niunaijun.blackbox.proxy.ProxyManifest;
-import top.niunaijun.blackbox.utils.BzFileUtils;
+import top.niunaijun.blackbox.utils.FileUtils;
 import top.niunaijun.blackbox.utils.Slog;
 import top.niunaijun.blackbox.utils.compat.ApplicationThreadCompat;
 import top.niunaijun.blackbox.utils.compat.BundleCompat;
@@ -319,17 +319,17 @@ public class BProcessManagerService implements ISystemService {
     private static void createProc(ProcessRecord record) {
         File cmdline = new File(BEnvironment.getProcDir(record.bpid), "cmdline");
         try {
-            BzFileUtils.writeToFile(record.processName.getBytes(), cmdline);
+            FileUtils.writeToFile(record.processName.getBytes(), cmdline);
         } catch (IOException ignored) {
         }
     }
 
     private static void removeProc(ProcessRecord record) {
-        BzFileUtils.deleteDir(BEnvironment.getProcDir(record.bpid));
+        FileUtils.deleteDir(BEnvironment.getProcDir(record.bpid));
     }
 
     @Override
     public void systemReady() {
-        BzFileUtils.deleteDir(BEnvironment.getProcDir());
+        FileUtils.deleteDir(BEnvironment.getProcDir());
     }
 }

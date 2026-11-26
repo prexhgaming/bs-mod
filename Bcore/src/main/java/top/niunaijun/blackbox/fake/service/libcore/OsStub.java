@@ -8,7 +8,6 @@ import black.libcore.io.BRLibcore;
 import top.niunaijun.blackbox.BlackBoxCore;
 import top.niunaijun.blackbox.app.BActivityThread;
 import top.niunaijun.blackbox.core.IOCore;
-import top.niunaijun.blackbox.entity.AppConfig;
 import top.niunaijun.blackbox.fake.hook.ClassInvocationStub;
 import top.niunaijun.blackbox.fake.hook.MethodHook;
 import top.niunaijun.blackbox.fake.hook.ProxyMethod;
@@ -89,11 +88,6 @@ public class OsStub extends ClassInvocationStub {
     private static int getFakeUid(int callUid) {
         if (callUid > 0 && callUid <= Process.FIRST_APPLICATION_UID)
             return callUid;
-
-        AppConfig appConfig = BlackBoxCore.getAppConfig();
-        if (appConfig != null && appConfig.buid > 0) {
-            return appConfig.buid;
-        }
 
         if (BActivityThread.isThreadInit() && BActivityThread.currentActivityThread().isInit()) {
             return BActivityThread.getBAppId();

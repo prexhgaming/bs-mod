@@ -20,14 +20,6 @@ import top.niunaijun.blackbox.app.BActivityThread;
 public class GoogleAccountManagerProxy extends ClassInvocationStub {
     public static final String TAG = "GoogleAccountManagerProxy";
 
-    private static boolean isGmsEnabledForCurrentUser() {
-        try {
-            return BlackBoxCore.get().isInstallGms(BActivityThread.getUserId());
-        } catch (Throwable ignored) {
-            return false;
-        }
-    }
-
     public GoogleAccountManagerProxy() {
         super();
     }
@@ -59,7 +51,6 @@ public class GoogleAccountManagerProxy extends ClassInvocationStub {
     public static class GetAccounts extends MethodHook {
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
-            boolean gmsEnabled = isGmsEnabledForCurrentUser();
             try {
                 Slog.d(TAG, "GoogleAccountManager: Handling getAccounts call");
                 
@@ -74,16 +65,10 @@ public class GoogleAccountManagerProxy extends ClassInvocationStub {
                 }
                 
                 
-                if (!gmsEnabled) {
-                    return new Account[0];
-                }
                 Slog.d(TAG, "GoogleAccountManager: No real accounts found, returning mock account");
                 return createMockGoogleAccounts();
                 
             } catch (Exception e) {
-                if (!gmsEnabled) {
-                    return new Account[0];
-                }
                 Slog.w(TAG, "GoogleAccountManager: GetAccounts error, returning mock accounts", e);
                 return createMockGoogleAccounts();
             }
@@ -94,7 +79,6 @@ public class GoogleAccountManagerProxy extends ClassInvocationStub {
     public static class GetAccountsByType extends MethodHook {
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
-            boolean gmsEnabled = isGmsEnabledForCurrentUser();
             try {
                 Slog.d(TAG, "GoogleAccountManager: Handling getAccountsByType call");
                 
@@ -103,7 +87,7 @@ public class GoogleAccountManagerProxy extends ClassInvocationStub {
                     Slog.d(TAG, "GoogleAccountManager: Requesting accounts of type: " + accountType);
                     
                     
-                    if ("com.google".equals(accountType) && gmsEnabled) {
+                    if ("com.google".equals(accountType)) {
                         Slog.d(TAG, "GoogleAccountManager: Returning mock Google accounts");
                         return createMockGoogleAccounts();
                     }
@@ -113,9 +97,6 @@ public class GoogleAccountManagerProxy extends ClassInvocationStub {
                 return method.invoke(who, args);
                 
             } catch (Exception e) {
-                if (!gmsEnabled) {
-                    return new Account[0];
-                }
                 Slog.w(TAG, "GoogleAccountManager: GetAccountsByType error, returning mock accounts", e);
                 return createMockGoogleAccounts();
             }
@@ -154,14 +135,10 @@ public class GoogleAccountManagerProxy extends ClassInvocationStub {
     public static class AddAccount extends MethodHook {
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
-            boolean gmsEnabled = isGmsEnabledForCurrentUser();
             try {
                 Slog.d(TAG, "GoogleAccountManager: Handling addAccount call");
                 return method.invoke(who, args);
             } catch (Exception e) {
-                if (!gmsEnabled) {
-                    return new Bundle();
-                }
                 Slog.w(TAG, "GoogleAccountManager: AddAccount error, returning mock result", e);
                 
                 Bundle result = new Bundle();
@@ -190,14 +167,10 @@ public class GoogleAccountManagerProxy extends ClassInvocationStub {
     public static class HasFeatures extends MethodHook {
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
-            boolean gmsEnabled = isGmsEnabledForCurrentUser();
             try {
                 Slog.d(TAG, "GoogleAccountManager: Handling hasFeatures call");
                 return method.invoke(who, args);
             } catch (Exception e) {
-                if (!gmsEnabled) {
-                    return false;
-                }
                 Slog.w(TAG, "GoogleAccountManager: HasFeatures error, returning true", e);
                 return true; 
             }
@@ -208,14 +181,10 @@ public class GoogleAccountManagerProxy extends ClassInvocationStub {
     public static class GetAuthToken extends MethodHook {
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
-            boolean gmsEnabled = isGmsEnabledForCurrentUser();
             try {
                 Slog.d(TAG, "GoogleAccountManager: Handling getAuthToken call");
                 return method.invoke(who, args);
             } catch (Exception e) {
-                if (!gmsEnabled) {
-                    return null;
-                }
                 Slog.w(TAG, "GoogleAccountManager: GetAuthToken error, returning mock token", e);
                 return "mock_google_auth_token_" + System.currentTimeMillis();
             }
@@ -240,14 +209,10 @@ public class GoogleAccountManagerProxy extends ClassInvocationStub {
     public static class PeekAuthToken extends MethodHook {
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
-            boolean gmsEnabled = isGmsEnabledForCurrentUser();
             try {
                 Slog.d(TAG, "GoogleAccountManager: Handling peekAuthToken call");
                 return method.invoke(who, args);
             } catch (Exception e) {
-                if (!gmsEnabled) {
-                    return null;
-                }
                 Slog.w(TAG, "GoogleAccountManager: PeekAuthToken error, returning mock token", e);
                 return "mock_peek_token_" + System.currentTimeMillis();
             }
@@ -286,14 +251,10 @@ public class GoogleAccountManagerProxy extends ClassInvocationStub {
     public static class GetAuthenticatorTypes extends MethodHook {
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
-            boolean gmsEnabled = isGmsEnabledForCurrentUser();
             try {
                 Slog.d(TAG, "GoogleAccountManager: Handling getAuthenticatorTypes call");
                 return method.invoke(who, args);
             } catch (Exception e) {
-                if (!gmsEnabled) {
-                    return new String[0];
-                }
                 Slog.w(TAG, "GoogleAccountManager: GetAuthenticatorTypes error, returning mock types", e);
                 return new String[]{"com.google"};
             }
@@ -304,14 +265,10 @@ public class GoogleAccountManagerProxy extends ClassInvocationStub {
     public static class IsAccountPresent extends MethodHook {
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
-            boolean gmsEnabled = isGmsEnabledForCurrentUser();
             try {
                 Slog.d(TAG, "GoogleAccountManager: Handling isAccountPresent call");
                 return method.invoke(who, args);
             } catch (Exception e) {
-                if (!gmsEnabled) {
-                    return false;
-                }
                 Slog.w(TAG, "GoogleAccountManager: IsAccountPresent error, returning true", e);
                 return true; 
             }

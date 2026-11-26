@@ -363,36 +363,8 @@ public class BActivityThread extends IBActivityThread.Stub {
         } catch (Throwable ignored) {
         }
 
-        int virtualUserId = BActivityThread.getUserId();
-        int hostUserId = BlackBoxCore.getHostUserId();
-        PackageInfo packageInfo = BlackBoxCore.getBPackageManager().getPackageInfo(
-                packageName,
-                PackageManager.GET_PROVIDERS,
-                virtualUserId
-        );
-        if (packageInfo == null && hostUserId != virtualUserId) {
-            packageInfo = BlackBoxCore.getBPackageManager().getPackageInfo(
-                    packageName,
-                    PackageManager.GET_PROVIDERS,
-                    hostUserId
-            );
-        }
-        if (packageInfo == null && virtualUserId != 0) {
-            packageInfo = BlackBoxCore.getBPackageManager().getPackageInfo(
-                    packageName,
-                    PackageManager.GET_PROVIDERS,
-                    0
-            );
-        }
-        if (packageInfo == null || packageInfo.applicationInfo == null) {
-            Slog.e(TAG, "handleBindApplication: PackageInfo is null for pkg=" + packageName
-                    + ", vUserId=" + virtualUserId + ", hostUserId=" + hostUserId);
-            return;
-        }
-
+        PackageInfo packageInfo = BlackBoxCore.getBPackageManager().getPackageInfo(packageName, PackageManager.GET_PROVIDERS, BActivityThread.getUserId());
         ApplicationInfo applicationInfo = packageInfo.applicationInfo;
-
-        ensureApacheLegacyOnSharedLibraryPath(applicationInfo);
         if (packageInfo.providers == null) {
             packageInfo.providers = new ProviderInfo[]{};
         }
@@ -405,39 +377,6 @@ public class BActivityThread extends IBActivityThread.Stub {
         BRLoadedApk.get(loadedApk)._set_mSecurityViolation(false);
         
         BRLoadedApk.get(loadedApk)._set_mApplicationInfo(applicationInfo);
-
-        try {
-            top.niunaijun.blackbox.utils.Reflector.with(loadedApk).field("mClassLoader").set(null);
-        } catch (Throwable t) {
-            Slog.w(TAG, "Failed to reset LoadedApk.mClassLoader: " + t.getMessage());
-        }
-
-        try {
-            BRLoadedApk.get(loadedApk).getClassLoader();
-        } catch (Throwable t) {
-            Slog.w(TAG, "Failed to (re)create LoadedApk classloader: " + t.getMessage());
-        }
-
-        try {
-            ClassLoader cl = BRLoadedApk.get(loadedApk).getClassLoader();
-            boolean hasApacheLegacy;
-            try {
-                Class.forName("org.apache.http.entity.InputStreamEntity", false, cl);
-                hasApacheLegacy = true;
-            } catch (Throwable ignored) {
-                hasApacheLegacy = false;
-            }
-
-            if (!hasApacheLegacy) {
-                String apacheLegacyJar = pickApacheLegacyJarPath();
-                if (apacheLegacyJar != null) {
-                    injectJarIntoClassLoader(cl, apacheLegacyJar, BlackBoxCore.getContext());
-                    Slog.d(TAG, "Injected apache legacy jar for " + packageName);
-                }
-            }
-        } catch (Throwable t) {
-            Slog.w(TAG, "Apache legacy injection failed for " + packageName + ": " + t.getMessage());
-        }
 
         int targetSdkVersion = applicationInfo.targetSdkVersion;
         if (targetSdkVersion < Build.VERSION_CODES.GINGERBREAD) {
@@ -544,126 +483,6 @@ public class BActivityThread extends IBActivityThread.Stub {
             Slog.e(TAG, "Critical error in handleBindApplication", e);
             throw new RuntimeException("Unable to makeApplication", e);
         }
-    }
-
-    private static void ensureApacheLegacyOnSharedLibraryPath(ApplicationInfo info) {
-        if (info == null) {
-            return;
-        }
-
-        String jarToUse = pickApacheLegacyJarPath();
-        if (jarToUse == null) {
-            return;
-        }
-
-        java.util.LinkedHashSet<String> libs = new java.util.LinkedHashSet<>();
-        if (info.sharedLibraryFiles != null) {
-            for (String s : info.sharedLibraryFiles) {
-                if (s != null && s.length() > 0) {
-                    libs.add(s);
-                }
-            }
-        }
-        libs.add(jarToUse);
-        info.sharedLibraryFiles = libs.toArray(new String[0]);
-    }
-
-    private static String pickApacheLegacyJarPath() {
-        final String apacheLegacyJar = "/system/framework/org.apache.http.legacy.jar";
-        final String apacheLegacyBootJar = "/system/framework/org.apache.http.legacy.boot.jar";
-
-        if (top.niunaijun.blackbox.utils.BzFileUtils.isExist(apacheLegacyJar)) {
-            return apacheLegacyJar;
-        }
-        if (top.niunaijun.blackbox.utils.BzFileUtils.isExist(apacheLegacyBootJar)) {
-            return apacheLegacyBootJar;
-        }
-        return null;
-    }
-
-    private static void injectJarIntoClassLoader(ClassLoader target, String jarPath, Context context) {
-        if (target == null || jarPath == null || jarPath.length() == 0) {
-            return;
-        }
-
-        try {
-            Object pathList = top.niunaijun.blackbox.utils.Reflector.on("dalvik.system.BaseDexClassLoader")
-                    .field("pathList")
-                    .get(target);
-            if (pathList == null) {
-                return;
-            }
-
-            java.util.ArrayList<java.io.File> files = new java.util.ArrayList<>();
-            files.add(new java.io.File(jarPath));
-
-            java.util.ArrayList<java.io.IOException> suppressed = new java.util.ArrayList<>();
-            java.io.File optimizedDir = null;
-            try {
-                if (context != null) {
-                    optimizedDir = context.getCodeCacheDir();
-                }
-            } catch (Throwable ignored) {
-            }
-
-            Object[] newElements = makeDexElements(pathList, files, optimizedDir, suppressed);
-            if (newElements == null || newElements.length == 0) {
-                return;
-            }
-
-            expandFieldArray(pathList, "dexElements", newElements);
-        } catch (Throwable t) {
-            Slog.w(TAG, "Failed to inject jar into classloader: " + t.getMessage());
-        }
-    }
-
-    private static Object[] makeDexElements(Object dexPathList,
-                                            java.util.ArrayList<java.io.File> files,
-                                            java.io.File optimizedDirectory,
-                                            java.util.ArrayList<java.io.IOException> suppressed) throws Exception {
-        Class<?> cls = dexPathList.getClass();
-
-        try {
-            java.lang.reflect.Method m = cls.getDeclaredMethod(
-                    "makePathElements",
-                    java.util.List.class,
-                    java.io.File.class,
-                    java.util.List.class
-            );
-            m.setAccessible(true);
-            Object r = m.invoke(dexPathList, files, optimizedDirectory, suppressed);
-            return (Object[]) r;
-        } catch (NoSuchMethodException ignored) {
-        }
-
-        java.lang.reflect.Method m = cls.getDeclaredMethod(
-                "makeDexElements",
-                java.util.ArrayList.class,
-                java.io.File.class,
-                java.util.ArrayList.class
-        );
-        m.setAccessible(true);
-        Object r = m.invoke(dexPathList, files, optimizedDirectory, suppressed);
-        return (Object[]) r;
-    }
-
-    private static void expandFieldArray(Object instance, String fieldName, Object[] extraElements)
-            throws NoSuchFieldException, IllegalAccessException {
-        java.lang.reflect.Field jlrField = instance.getClass().getDeclaredField(fieldName);
-        jlrField.setAccessible(true);
-        Object[] original = (Object[]) jlrField.get(instance);
-        if (original == null) {
-            jlrField.set(instance, extraElements);
-            return;
-        }
-
-        Object[] combined = (Object[]) java.lang.reflect.Array.newInstance(
-                original.getClass().getComponentType(),
-                original.length + extraElements.length
-        );
-        System.arraycopy(original, 0, combined, 0, original.length);
-        System.arraycopy(extraElements, 0, combined, original.length, extraElements.length);
-        jlrField.set(instance, combined);
     }
     
     
@@ -814,57 +633,18 @@ public class BActivityThread extends IBActivityThread.Stub {
     
     private ClassLoader getClassLoader(android.content.pm.ApplicationInfo appInfo) {
         try {
-            String dexPath = buildDexPath(appInfo);
-            if (dexPath != null && dexPath.length() > 0) {
-                return new dalvik.system.PathClassLoader(dexPath, ClassLoader.getSystemClassLoader());
+            
+            String sourceDir = appInfo.sourceDir;
+            if (sourceDir != null) {
+                return new dalvik.system.PathClassLoader(sourceDir, ClassLoader.getSystemClassLoader());
             }
-
+            
+            
             return ClassLoader.getSystemClassLoader();
         } catch (Exception e) {
             Slog.w(TAG, "Error getting class loader: " + e.getMessage());
             return ClassLoader.getSystemClassLoader();
         }
-    }
-
-    private String buildDexPath(android.content.pm.ApplicationInfo appInfo) {
-        if (appInfo == null) {
-            return null;
-        }
-
-        java.util.LinkedHashSet<String> paths = new java.util.LinkedHashSet<>();
-
-        if (appInfo.sourceDir != null && appInfo.sourceDir.length() > 0) {
-            paths.add(appInfo.sourceDir);
-        }
-
-        if (appInfo.splitSourceDirs != null) {
-            for (String split : appInfo.splitSourceDirs) {
-                if (split != null && split.length() > 0) {
-                    paths.add(split);
-                }
-            }
-        }
-
-        if (appInfo.sharedLibraryFiles != null) {
-            for (String lib : appInfo.sharedLibraryFiles) {
-                if (lib != null && lib.length() > 0) {
-                    paths.add(lib);
-                }
-            }
-        }
-
-        if (paths.isEmpty()) {
-            return null;
-        }
-
-        StringBuilder sb = new StringBuilder();
-        for (String p : paths) {
-            if (sb.length() > 0) {
-                sb.append(java.io.File.pathSeparator);
-            }
-            sb.append(p);
-        }
-        return sb.toString();
     }
 
     
@@ -1023,33 +803,58 @@ public class BActivityThread extends IBActivityThread.Stub {
     
     private void installContentProvider(Application application, android.content.pm.ProviderInfo providerInfo) {
         try {
-            
+
             if (application == null) {
                 Slog.w(TAG, "Application is null, cannot install content provider: " + providerInfo.name);
                 return;
             }
-            
-            
+
+            // Skip known anti-virtual-environment detection providers.
+            // These providers detect the sandbox and call System.exit() to kill the app.
+            // By skipping them, the app continues to run normally.
+            if (providerInfo.name != null && isAntiDetectProvider(providerInfo.name)) {
+                Slog.w(TAG, "Skipping anti-detect ContentProvider: " + providerInfo.name);
+                return;
+            }
+
             ClassLoader classLoader = application.getClassLoader();
             if (classLoader == null) {
                 Slog.w(TAG, "Application class loader is null, using system class loader for: " + providerInfo.name);
                 classLoader = ClassLoader.getSystemClassLoader();
             }
-            
-            
+
             android.content.ContentProvider provider = (android.content.ContentProvider) classLoader
                 .loadClass(providerInfo.name).newInstance();
-            
-            
+
             provider.attachInfo(application, providerInfo);
-            
-            
-            
+
             Slog.d(TAG, "Content provider installed: " + providerInfo.name);
-            
+
         } catch (Exception e) {
             Slog.e(TAG, "Error installing content provider " + providerInfo.name, e);
         }
+    }
+
+    /**
+     * Check if a ContentProvider is a known anti-virtual-environment detector.
+     * These providers detect sandboxed environments and force-kill the app.
+     */
+    private static boolean isAntiDetectProvider(String className) {
+        String lower = className.toLowerCase();
+        // Meituan Hades anti-cheat
+        return lower.contains("hades")
+                || lower.contains("ztuni")
+                // Douyin/TikTok security
+                || lower.contains("securityguard")
+                || lower.contains("avdetector")
+                // Common detection patterns
+                || lower.contains("virtualdetect")
+                || lower.contains("sandboxdetect")
+                || lower.contains("emulatordetect")
+                || lower.contains("fridadetect")
+                || lower.contains("hookdetect")
+                || lower.contains("xposeddetect")
+                || lower.contains("magiskdetect");
     }
     
     
@@ -1215,6 +1020,11 @@ public class BActivityThread extends IBActivityThread.Stub {
         try {
             for (ProviderInfo providerInfo : provider) {
                 try {
+                    // Skip known anti-virtual-environment detection providers.
+                    if (providerInfo.name != null && isAntiDetectProvider(providerInfo.name)) {
+                        Slog.w(TAG, "Skipping anti-detect ContentProvider: " + providerInfo.name);
+                        continue;
+                    }
                     if (processName.equals(providerInfo.processName) ||
                             providerInfo.processName.equals(context.getPackageName()) || providerInfo.multiprocess) {
                         installProvider(BlackBoxCore.mainThread(), context, providerInfo, null);
