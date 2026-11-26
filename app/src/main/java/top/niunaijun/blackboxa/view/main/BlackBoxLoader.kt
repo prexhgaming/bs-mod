@@ -10,7 +10,6 @@ import top.niunaijun.blackbox.app.BActivityThread
 import top.niunaijun.blackbox.app.configuration.AppLifecycleCallback
 import top.niunaijun.blackbox.app.configuration.ClientConfiguration
 import top.niunaijun.blackboxa.app.App
-import top.niunaijun.blackboxa.app.rocker.RockerManager
 import top.niunaijun.blackboxa.biz.cache.AppSharedPreferenceDelegate
 import java.io.File
 
@@ -152,7 +151,6 @@ class BlackBoxLoader {
                         if (application != null && packageName == GameTarget.PACKAGE_NAME) {
                             ZynBs.load(packageName, GameTarget.USER_ID)
                         }
-                        RockerManager.init(application,userId)
                     } catch (e: Exception) {
                         Log.e(TAG, "Error in afterApplicationOnCreate: ${e.message}")
                     }

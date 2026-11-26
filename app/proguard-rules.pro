@@ -89,11 +89,8 @@
 # ----------------------------------------------------------------------------
 # Application class is named in the manifest.
 -keep class top.niunaijun.blackboxa.app.App { *; }
-# Custom views are inflated from XML by their fully qualified name.
--keep class top.niunaijun.blackboxa.widget.** { *; }
-# Floating rocker overlay is inflated from a layout.
--keep class com.rosan.floatingview.** { *; }
--keep class com.rosan.dhizuku.** { *; }
+# Crash viewer is started by an explicit Intent and lives in its own process.
+-keep class top.niunaijun.blackboxa.crash.** { *; }
 
 # ----------------------------------------------------------------------------
 # Libraries that rely on reflection / generics

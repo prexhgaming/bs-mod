@@ -40,6 +40,7 @@ __pycache__/
 # Uploaded game splits / local APKs (large, not project source)
 *.apk
 split_config.*.apk
+/app/src/main/cpp/SDK
 
 # Game resource archives (reference material, not project source)
 *.mpk

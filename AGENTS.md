@@ -50,6 +50,12 @@
 - Engine gotcha: the sandbox redirects `SharedPreferences` into the game's own virtual data dir, so host and guest processes read *different* prefs files. Any decision shared between them must live in a file the guest can read, not in prefs.
 - Removed by this swap — do not resurrect: the Python SDK dumper (`sdk_dumper.cpp`, `py_runtime_dump.cpp`, `native_utils.cpp`, `third_party/`, `util/PySdkDumper.kt`) and its More-menu toggle (`action_dump_sdk`). `uploads/` (reference material, e.g. `src.zip`) and `tmp/` (scratch rigs) are gitignored.
 
+## Crash handling (`:app`)
+- **`CrashHandler.install()` runs in `App.attachBaseContext` immediately after `super.attachBaseContext` and before the first `BlackBoxCore` call** — that ordering is the point: a crash during engine init is exactly what it must catch, so it can never be installed later (not in `onCreate`, not in an Activity).
+- The report is **never written to disk**. It is formatted in memory, handed to `CrashActivity` via the `EXTRA_REPORT` intent extra (truncated to 200k chars, well under the binder limit), and the process is killed. There is no history file and no "last crash" cache — do not add one.
+- `CrashActivity` is declared with `android:process=":crash"` so it outlives the dying process, and `App` skips **all** engine setup in that process (both `attachBaseContext` and `onCreate`) — it has to render when the engine is the thing that failed. Keep those guards.
+- `release` has `minifyEnabled true` + `shrinkResources true`. Safe because nothing resolves resources by name (`Resources.getIdentifier` appears nowhere); the engine's reflection needs are covered by `proguard-rules.pro`.
+
 ## Toolchain
 - Gradle wrapper 8.13, AGP 8.13.2, Kotlin 1.9.23, JDK 17, `compileSdk 35`, `targetSdk 28`, `minSdk 21`, `ndkVersion 29.0.13846066`, ABI `armeabi-v7a` (32-bit only — see the mod-menu section).
 - **The wrapper version and AGP must move together**: AGP 8.13 refuses to apply on Gradle < 8.13 (`Minimum supported Gradle version is 8.13`). Bumping `agp` in `gradle/libs.versions.toml` without bumping `distributionUrl` in `gradle/wrapper/gradle-wrapper.properties` fails at configuration time, before any compilation.

@@ -51,8 +51,8 @@ android {
         release {
             // R8 does the shrinking: see proguard-rules.pro for what the engine
             // needs to keep. Everything else (app code, unused libs) gets trimmed.
-            minifyEnabled false
-            shrinkResources false
+            minifyEnabled true
+            shrinkResources true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
             signingConfig keystorePropertiesFile.exists() ? signingConfigs.release : signingConfigs.debug
         }
@@ -108,14 +108,12 @@ android {
 }
 
 dependencies {
-    implementation fileTree(dir: "libs", include: ["*.jar", "*.aar"])
     implementation project(':Bcore')
 
     implementation libs.appcompat
     implementation libs.material
     implementation libs.constraintlayout
     implementation libs.core.ktx
-    implementation libs.recyclerview
 
     // Single-screen UI: live data + coroutines only.
     implementation "androidx.lifecycle:lifecycle-viewmodel-ktx:2.6.2"

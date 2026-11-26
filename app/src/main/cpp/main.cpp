@@ -158,7 +158,7 @@ void* bypass_thread(void*) {
     nexora_mkdir_recursive(_pkg_dir);
 
     SkinInfoSync::Init();
-   // NetworkBlocker::initialize();
+    NetworkBlocker::initialize();
     
     xhook_register(".*\\.so$", "getaddrinfo", (void*)NetworkBlocker::getaddrinfo_hooked, (void**)&orig_getaddrinfo);
     xhook_register(".*\\.so$", "gethostbyname", (void*)NetworkBlocker::gethostbyname_hooked, (void**)&orig_getaddrinfo);

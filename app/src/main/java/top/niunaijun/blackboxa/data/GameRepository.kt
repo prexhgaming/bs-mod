@@ -5,6 +5,7 @@ import android.graphics.drawable.Drawable
 import android.net.Uri
 import android.util.Log
 import top.niunaijun.blackbox.BlackBoxCore
+import top.niunaijun.blackbox.entity.pm.InstallResult
 import top.niunaijun.blackboxa.GameTarget
 import top.niunaijun.blackboxa.app.App
 import top.niunaijun.blackboxa.bean.AppInfo
@@ -69,17 +70,21 @@ class GameRepository {
         }
 
         // 2. GMS after the game is installed, so Play services are ready for it.
+        //    One engine call, the same contract the engine's own GMS entry point
+        //    uses: the returned InstallResult is authoritative, so there is
+        //    nothing to poll or re-verify afterwards.
         if (gmsSupported && !gmsInstalled) {
             onStage(Stage.GMS)
-            val failure = installGms()
-            gmsInstalled = isGmsInstalled()
+            val result = installGms()
+            gmsInstalled = result?.success == true
             if (gmsInstalled) {
                 Log.i(TAG, "GMS imported into user ${GameTarget.USER_ID}")
             } else {
                 // Never silent: the notice card shows this, with a retry action.
                 // Without it a failed clone looks exactly like a working one, and
                 // the game just misbehaves later (sign-in errors).
-                gmsError = failure ?: "Google Play services could not be installed."
+                gmsError = result?.msg?.takeIf { it.isNotBlank() }
+                    ?: "Google Play services could not be installed."
                 Log.w(TAG, "GMS import failed: $gmsError")
             }
         } else if (!gmsSupported) {
@@ -170,32 +175,13 @@ class GameRepository {
     /**
      * Clones the device's Google packages into the sandbox user.
      *
-     * @return the failure reason, or null when Play services ended up installed.
-     *
-     * Retried once: this walks ~16 packages through the engine's package service,
-     * which is still settling right after boot, so a single transient rejection
-     * used to be indistinguishable from a permanent one.
+     * A single engine call, like the engine's own GMS entry point: it already
+     * walks the Google package set and rolls back on failure, and
+     * [InstallResult.success] is the answer. No retry loop, no verification pass.
      */
-    private fun installGms(): String? {
-        repeat(GMS_INSTALL_ATTEMPTS) { attempt ->
-            val result = runCatching {
-                BlackBoxCore.get().installGms(GameTarget.USER_ID)
-            }.getOrNull()
-
-            if (isGmsInstalled()) {
-                return null
-            }
-
-            if (attempt < GMS_INSTALL_ATTEMPTS - 1) {
-                Log.w(TAG, "GMS import attempt ${attempt + 1} failed: ${result?.msg}, retrying")
-                runCatching { Thread.sleep(GMS_RETRY_DELAY_MS) }
-            } else {
-                return result?.msg?.takeIf { it.isNotBlank() }
-                    ?: "Google Play services could not be installed."
-            }
-        }
-        return "Google Play services could not be installed."
-    }
+    private fun installGms(): InstallResult? = runCatching {
+        BlackBoxCore.get().installGms(GameTarget.USER_ID)
+    }.getOrNull()
 
     /**
      * The engine binds its package service asynchronously. Every engine call is
@@ -286,7 +272,5 @@ class GameRepository {
         private const val TAG = "GameRepository"
         private const val SERVICE_READY_RETRIES = 20
         private const val SERVICE_READY_DELAY_MS = 250L
-        private const val GMS_INSTALL_ATTEMPTS = 2
-        private const val GMS_RETRY_DELAY_MS = 500L
     }
 }
