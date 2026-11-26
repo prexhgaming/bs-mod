@@ -358,6 +358,7 @@ public class IPackageManagerProxy extends BinderInvocationStub {
                 PackageInfo real = tryGetRealHostPackageInfoWithSignatures(who, method, args);
                 if (real != null) {
                     attachSigningInfo(fake, real);
+                    fillFakePackageGaps(fake, real);
                 } else {
                     Slog.w(TAG, "GetPackageInfo: no host " + packageName
                             + " available to borrow signatures from");
@@ -470,7 +471,17 @@ public class IPackageManagerProxy extends BinderInvocationStub {
             packageInfo.packageName = "com.android.vending";
             packageInfo.versionName = "33.8.16-21";
             packageInfo.versionCode = 83381621;
-            
+
+            // Play Store (Finsky) indexes these arrays directly. A null array is not
+            // a graceful "unknown" to it: it throws
+            // "NullPointerException: Attempt to read from null array" and the process
+            // dies, which is what the logcat showed right after
+            // "PSR: Package com.android.vending has null signatures".
+            packageInfo.splitNames = new String[0];
+            packageInfo.gids = new int[0];
+            packageInfo.firstInstallTime = System.currentTimeMillis();
+            packageInfo.lastUpdateTime = System.currentTimeMillis();
+
             ApplicationInfo appInfo = new ApplicationInfo();
             appInfo.packageName = "com.android.vending";
             appInfo.name = "Google Play Store";
@@ -480,6 +491,55 @@ public class IPackageManagerProxy extends BinderInvocationStub {
             
             Slog.d(TAG, "GetPackageInfo: Providing fake Google Play Services info");
             return packageInfo;
+        }
+
+        /**
+         * Fills the gaps the synthetic Play Store entry leaves, using the host's real
+         * PackageInfo.
+         *
+         * Signatures are the ones that matter for verification, but Finsky also opens
+         * its own APK (sourceDir/publicSourceDir) and reads its data dir, so leaving
+         * those null trades a signature failure for a null-pointer crash.
+         */
+        private void fillFakePackageGaps(PackageInfo fake, PackageInfo real) {
+            if (fake == null || real == null) {
+                return;
+            }
+            try {
+                if (fake.signatures == null) {
+                    fake.signatures = real.signatures;
+                }
+                if (fake.signingInfo == null) {
+                    fake.signingInfo = real.signingInfo;
+                }
+                if (fake.firstInstallTime == 0) {
+                    fake.firstInstallTime = real.firstInstallTime;
+                }
+                if (fake.lastUpdateTime == 0) {
+                    fake.lastUpdateTime = real.lastUpdateTime;
+                }
+                ApplicationInfo fakeApp = fake.applicationInfo;
+                ApplicationInfo realApp = real.applicationInfo;
+                if (fakeApp == null || realApp == null) {
+                    return;
+                }
+                if (fakeApp.sourceDir == null) {
+                    fakeApp.sourceDir = realApp.sourceDir;
+                }
+                if (fakeApp.publicSourceDir == null) {
+                    fakeApp.publicSourceDir = realApp.publicSourceDir;
+                }
+                if (fakeApp.dataDir == null) {
+                    fakeApp.dataDir = realApp.dataDir;
+                }
+                if (fakeApp.nativeLibraryDir == null) {
+                    fakeApp.nativeLibraryDir = realApp.nativeLibraryDir;
+                }
+                if (fakeApp.targetSdkVersion == 0) {
+                    fakeApp.targetSdkVersion = realApp.targetSdkVersion;
+                }
+            } catch (Throwable ignored) {
+            }
         }
     }
 
