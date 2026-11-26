@@ -154,7 +154,7 @@ void* bypass_thread(void*) {
     xhook_register(".*\\.so$", "gethostbyname", (void*)NetworkBlocker::gethostbyname_hooked, (void**)&orig_getaddrinfo);
     xhook_register(".*\\.so$", "connect", (void*)my_connect, (void**)&original_connect);
     xhook_refresh(0);
-    HOOKI((ptr)libGameBase + 0x106520c, iMissMyWife);
+    HOOKI((ptr)libGameBase + 0x3e832a8, iMissMyWife);
 
     menu_visible = true;
     AddNotification("✅ NEXORA READY!", 140, 89, 242, 2.f);
