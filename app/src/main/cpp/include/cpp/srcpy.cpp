@@ -1,27 +1,21 @@
 #include "../obfuscate.h"
 
 const char* srcpy = O(R"srcpy(
-import os, json, threading, functools, math, sys, inspect, time, socket, struct
-
-PACKAGE_NAME = "com.netease.newspike"
+import json, threading, functools, time, socket
 
 # ============================================================
 # 🔥 UDP CONFIGURATION
 # ============================================================
 UDP_SEND_PORT = 50000   # C++ -> Python (sync commands)
 UDP_RECV_PORT = 50001   # Python -> C++ (ESP data)
-UDP_SKIN_PORT = 50002   # Python -> C++ (skin info)
-UDP_HERO_PORT = 50003   # Python -> C++ (hero info)
 
 # UDP Sockets
 _send_sock = None
 _recv_sock = None
-_skin_sock = None
-_hero_sock = None
 _udp_initialized = False
 
 def _init_udp():
-    global _send_sock, _recv_sock, _skin_sock, _hero_sock, _udp_initialized
+    global _send_sock, _recv_sock, _udp_initialized
     if _udp_initialized:
         return
     
@@ -38,16 +32,6 @@ def _init_udp():
         _recv_sock.bind(("127.0.0.1", UDP_SEND_PORT))
         _recv_sock.settimeout(0.001)
         
-        # Skin info socket
-        _skin_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        _skin_sock.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 2*1024*1024)
-        _skin_sock.settimeout(0.001)
-        
-        # Hero info socket
-        _hero_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        _hero_sock.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 2*1024*1024)
-        _hero_sock.settimeout(0.001)
-        
         _udp_initialized = True
     except Exception as e:
         print(f"[UDP] Init error: {e}")
@@ -62,30 +46,6 @@ def _write_udp(data):
             data = data.encode('utf-8')
         _send_sock.sendto(data, ("127.0.0.1", UDP_RECV_PORT))
     except Exception as e:
-        pass
-
-def _write_udp_skin(data):
-    """Kirim skin info via UDP"""
-    global _skin_sock
-    if not _udp_initialized:
-        _init_udp()
-    try:
-        if isinstance(data, str):
-            data = data.encode('utf-8')
-        _skin_sock.sendto(data, ("127.0.0.1", UDP_SKIN_PORT))
-    except Exception:
-        pass
-
-def _write_udp_hero(data):
-    """Kirim hero info via UDP"""
-    global _hero_sock
-    if not _udp_initialized:
-        _init_udp()
-    try:
-        if isinstance(data, str):
-            data = data.encode('utf-8')
-        _hero_sock.sendto(data, ("127.0.0.1", UDP_HERO_PORT))
-    except Exception:
         pass
 
 # ============================================================
@@ -106,7 +66,6 @@ def _read_udp_thread():
                     parsed = json.loads(data.decode('utf-8'))
                     if isinstance(parsed, dict):
                         sync_attrs.update(parsed)
-                        _load_skinsel()
                 except:
                     pass
         except socket.timeout:
@@ -121,29 +80,44 @@ _init_udp()
 threading.Thread(target=_read_udp_thread, daemon=True).start()
 
 # ============================================================
-# 🔥 SKIN INFO BUILDER & SENDER (via UDP)
+# 🔥 GAME IMPORTS — only what aim / visuals / weapon need
 # ============================================================
 from gclient.framework.entities.space import Space
 from gclient.framework.util.replay_util import IsPlayerTeammate
 from gclient.framework.camera.fps_placer import FpsPlacer
 from gclient.gameplay.logic_base.entities.combat_avatar import CombatAvatar, PlayerCombatAvatar
-from gclient.gameplay.logic_base.equips.equip_case import EquipCaseFactory
-from gclient.gameplay.logic_base.equips.weapon_case import WeaponCase, WeaponCaseBase
+from gclient.gameplay.logic_base.equips.weapon_case import WeaponCase
 from gshare.formula import Distance3D
-from gclient.gamesystem.entities.hall_doll import Doll
-from gclient.gamesystem.models.hall_show_model import HallShowModel
 
-# FPS Unlock
+# Weapon display names for the ESP panel, read lazily from the game's own equip
+# table. The old build_auto_wep_dictionary() walked every entry of
+# gun_skin_template_base_data at import time to build four dicts (WEP,
+# WEP_NAMES, WEP_SKIN_INFO, SKIN_TO_EQUIP) that only the skin hack used, and
+# kept them alive for the whole session. This touches one dict entry per weapon
+# actually on screen, and the table is one the game already has loaded.
 try:
-    import gclient.framework.util.performance_util as perf_util
-    if hasattr(perf_util, 'EFpsLimit'):
-        for _k in list(perf_util.EFpsLimit.keys()):
-            perf_util.EFpsLimit[_k] = 999
-    if hasattr(perf_util, 'EFpsLimitPC'):
-        for _k in list(perf_util.EFpsLimitPC.keys()):
-            perf_util.EFpsLimitPC[_k] = 999
-except Exception as e:
-    pass
+    import gclient.data.equip_data as _equip_data
+except Exception:
+    _equip_data = None
+
+# Loot ESP labels. This used to be imported inside the hero-skin block, so the
+# loot path depended on that block's try/except succeeding; it is a plain
+# module-level import now that the skin code is gone.
+try:
+    import gclient.data.lobby_item_data as _lobby_item_data
+except Exception:
+    _lobby_item_data = None
+
+def _wep_name(equip_id):
+    try:
+        info = _equip_data.data.get(equip_id) if _equip_data else None
+        if info:
+            name = info.get('name')
+            if name:
+                return name
+    except Exception:
+        pass
+    return 'Punk'
 
 def HOOK(clazz, bLog=False, _name=None):
     def decorator(func, _name=_name):
@@ -171,978 +145,7 @@ def TRY(_func=None, *, bLog=False):
         return wrapper
     return decorator(_func) if _func else decorator
 
-WEP = {}
-WEP_NAMES = {}
-WEP_SKIN_INFO = {}
-SKIN_TO_EQUIP = {}
 
-try:
-    import gclient.data.effect_data as efd
-except:
-    efd = None
-
-def _resolve_effect(effect_id):
-    if not efd or not effect_id:
-        return None
-    try:
-        info = efd.data.get(effect_id)
-        if not info:
-            return None
-        return info.get('path') or info.get('effect_string')
-    except:
-        return None
-
-def _skin_effect_id(skin_info):
-    fx = skin_info.get('optic_b_fx')
-    if fx:
-        return fx
-    return None
-
-try:
-    import gclient.data.equip_data as ed
-    import gclient.data.gun_skin_template_base_data as gst
-    import re
-
-    def _base_skin_name_and_level(name):
-        if not name:
-            return name, 0
-        m = re.search(r'\s*-?\s*LV(\d+)\s*$', name)
-        if not m:
-            return name, 0
-        level = int(m.group(1))
-        base = name[:m.start()].strip()
-        return base, level
-
-    def build_auto_wep_dictionary():
-        global WEP, WEP_NAMES, WEP_SKIN_INFO, SKIN_TO_EQUIP
-        equip_names = {}
-        gun_to_equip_map = {}
-        for equip_id, equip_info in ed.data.items():
-            equip_names[equip_id] = equip_info.get('name') or str(equip_id)
-            if gun_id := equip_info.get('gun_id'):
-                gun_to_equip_map[gun_id] = equip_id
-        melee_case_map = {'Melee': 33, 'DualMelee': 97, 'Heirloom': 141}
-        melee_id_map = {2: 84, 3: 86, 4: 89, 5: 107}
-        temp_skins = {}
-        for skin_id, skin_info in gst.data.items():
-            target_equip_id = None
-            replace_id = skin_info.get('replace_equip_id')
-            if replace_id:
-                orig_equip = ed.data.get(replace_id, {})
-                m_id = orig_equip.get('melee_weapon_id')
-                e_case = orig_equip.get('equip_case')
-                if m_id == 1:
-                    target_equip_id = melee_case_map.get(e_case)
-                else:
-                    target_equip_id = melee_id_map.get(m_id)
-            else:
-                if gun_id := skin_info.get('gun_id'):
-                    target_equip_id = gun_to_equip_map.get(gun_id)
-            if not target_equip_id:
-                continue
-            if (skin_info.get('gun_skin_type') or 0) != 1:
-                continue
-            if target_equip_id not in temp_skins:
-                temp_skins[target_equip_id] = {}
-            skin_name = skin_info.get('skin_name')
-            base_name, level = _base_skin_name_and_level(skin_name)
-            dedup_key = base_name if base_name else skin_id
-            existing = temp_skins[target_equip_id].get(dedup_key)
-            if existing and existing[0] >= level:
-                continue
-            temp_skins[target_equip_id][dedup_key] = (level, skin_id)
-            eff_id = _skin_effect_id(skin_info)
-            WEP_SKIN_INFO[skin_id] = {
-                'name': skin_name,
-                'effect_id': eff_id,
-                'effect_path': _resolve_effect(eff_id),
-                'optic_b_fx': skin_info.get('optic_b_fx'),
-                'optic_b_fx_path': _resolve_effect(skin_info.get('optic_b_fx')),
-                'skin_optic_id': skin_info.get('skin_optic_id'),
-                'kill_mat': skin_info.get('kill_mat'),
-                'team_kill_mat': skin_info.get('Team_kill_mat'),
-                'kill_mat_start_time': skin_info.get('kill_mat_start_time'),
-                'team_kill_mat_start_time': skin_info.get('Team_kill_mat_start_time'),
-                'kill_team_extra_model_id': skin_info.get('kill_team_extra_model_id'),
-                'kill_team_extra_hexie_model_id': skin_info.get('kill_team_extra_hexie_model_id'),
-                'kill_tip_icon_replace': skin_info.get('kill_tip_icon_replace'),
-                'extra_model_kill_team_anim_name': skin_info.get('ExtraModelKillTeamAnimName'),
-                'team_die_action_pose': skin_info.get('TeamDieActionPose'),
-                'team_die_action_pose_time': skin_info.get('TeamDieActionPoseTime'),
-                'special_die_action_pose': skin_info.get('SpecialDieActionPose'),
-                'fps_tracer_bullet_id': skin_info.get('fps_tracer_bullet_id'),
-                'fps_adstracer_bullet_id': skin_info.get('fps_adstracer_bullet_id'),
-                'tps_tracer_bullet_id': skin_info.get('tps_tracer_bullet_id'),
-                'fps_simple_tracer_bullet_id': skin_info.get('fps_simple_tracer_bullet_id'),
-                'extra_ballistic_tracer_bullet_id': skin_info.get('extra_ballistic_tracer_bullet_id'),
-            }
-        HARDCORE_SKINS = {33: [21000009,91000001,91000002,91000003,11000018,21000005,11000007,31000010,21000008,31000007,11000002,811990203,141199023]}
-        for equip_id, hardcore_list in HARDCORE_SKINS.items():
-            if equip_id not in temp_skins:
-                temp_skins[equip_id] = {}
-            for skin_id in hardcore_list:
-                dedup_key = f"hardcore_{skin_id}"
-                temp_skins[equip_id][dedup_key] = (99, skin_id)
-                WEP_SKIN_INFO[skin_id] = {
-                    'name': f"Skin_{skin_id}",
-                    'effect_id': None,
-                    'effect_path': None,
-                    'optic_b_fx': None,
-                    'optic_b_fx_path': None,
-                    'skin_optic_id': None,
-                    'kill_mat': None,
-                    'team_kill_mat': None,
-                    'kill_mat_start_time': None,
-                    'team_kill_mat_start_time': None,
-                    'kill_team_extra_model_id': None,
-                    'kill_team_extra_hexie_model_id': None,
-                    'kill_tip_icon_replace': None,
-                    'extra_model_kill_team_anim_name': None,
-                    'team_die_action_pose': None,
-                    'team_die_action_pose_time': None,
-                    'special_die_action_pose': None,
-                    'fps_tracer_bullet_id': None,
-                    'fps_adstracer_bullet_id': None,
-                    'tps_tracer_bullet_id': None,
-                    'fps_simple_tracer_bullet_id': None,
-                    'extra_ballistic_tracer_bullet_id': None,
-                }
-        for equip_id, entries in temp_skins.items():
-            skin_ids = [sid for _, sid in entries.values()]
-            if skin_ids:
-                name = equip_names.get(equip_id, str(equip_id))
-                WEP[equip_id] = [name] + skin_ids
-                WEP_NAMES[equip_id] = name
-                for sid in skin_ids:
-                    SKIN_TO_EQUIP[sid] = equip_id
-
-    build_auto_wep_dictionary()
-
-    def _build_skin_info_lines():
-        lines = []
-        for equip_id, entries in WEP.items():
-            weapon_name = entries[0]
-            lines.append("W|%d|%s" % (equip_id, weapon_name))
-            for idx, skin_id in enumerate(entries[1:], start=1):
-                skin_name = (WEP_SKIN_INFO.get(skin_id) or {}).get('name') or str(skin_id)
-                lines.append("S|%d|%d|%s" % (equip_id, idx, skin_name))
-        lines.append("END")
-        return ("\n".join(lines) + "\n")
-
-    def _send_skin_info_loop():
-        payload = _build_skin_info_lines()
-        for _ in range(15):
-            try:
-                _write_udp_skin(payload)
-                break
-            except:
-                time.sleep(2)
-
-    threading.Thread(target=_send_skin_info_loop, daemon=True).start()
-
-    try:
-        from gclient.gameplay.uicomponents.hud_killrecord_comp import HudKillRecordComp, HudKillRecordCompPC, HudKillRecordCompV2
-
-        def _weapon_name_and_wids(weapon_id):
-            try:
-                weapon_id = int(weapon_id or 0)
-                entry = WEP.get(weapon_id)
-                if not entry:
-                    return None, []
-                return entry[0], entry[1:]
-            except Exception:
-                return None, []
-
-        def _get_selected_skin_for_weapon(weapon_id):
-            try:
-                name, wids = _weapon_name_and_wids(weapon_id)
-                if not name or not wids:
-                    return 0
-                idx = int(sync_attrs.get(f'iSkin_{int(weapon_id)}', 0) or 0)
-                if 1 <= idx <= len(wids):
-                    return wids[idx - 1]
-            except Exception:
-                pass
-            return 0
-
-        def _get_case_skin(wc):
-            if not wc:
-                return 0
-            try:
-                wid = getattr(wc, 'weapon_id', 0) or getattr(wc, 'equip_id', 0)
-                if wid:
-                    sid = _get_selected_skin_for_weapon(wid)
-                    if sid:
-                        return sid
-            except Exception:
-                pass
-            try:
-                sid = getattr(wc, '_selected_skin_id', 0)
-                if sid:
-                    return sid
-            except Exception:
-                pass
-            try:
-                sid = getattr(wc, 'guise_id', 0) or getattr(wc, 'guise_item_id', 0) or getattr(wc, 'guise_template_id', 0)
-                if sid:
-                    return sid
-            except Exception:
-                pass
-            try:
-                d = getattr(wc, '__dict__', {})
-                sid = d.get('_selected_skin_id', 0) or d.get('guise_id', 0) or d.get('guise_item_id', 0) or d.get('guise_template_id', 0)
-                if sid:
-                    return sid
-            except Exception:
-                pass
-            return 0
-
-        def _get_weapon_case_from_info(ca, info):
-            if not ca or not isinstance(info, dict):
-                return None
-            try:
-                wguid = info.get('weapon_guid')
-                if wguid and hasattr(ca, 'GetWeaponCase'):
-                    wc = ca.GetWeaponCase(wguid)
-                    if wc:
-                        return wc
-            except Exception:
-                pass
-            return None
-
-        def _get_kill_skin(info=None):
-            try:
-                sp = getattr(Space, '_instance', None)
-                owner = getattr(sp, 'owner', None) if sp else None
-                ca = getattr(owner, 'combat_avatar', None) if owner else None
-                if not ca:
-                    return 0, None
-                wc = _get_weapon_case_from_info(ca, info)
-                if wc:
-                    sid = _get_case_skin(wc)
-                    if sid:
-                        return sid, wc
-                try:
-                    weapon = ca.GetCurWeapon()
-                    if weapon and hasattr(ca, 'GetWeaponCase'):
-                        guid = getattr(weapon, 'guid', None)
-                        if guid:
-                            wc = ca.GetWeaponCase(guid)
-                            if wc:
-                                sid = _get_case_skin(wc)
-                                if sid:
-                                    return sid, wc
-                except Exception:
-                    pass
-                try:
-                    weapon = ca.GetCurWeapon()
-                    if weapon:
-                        wid = getattr(weapon, 'weapon_id', 0) or getattr(weapon, 'equip_id', 0)
-                        sid = _get_selected_skin_for_weapon(wid)
-                        if sid:
-                            return sid, None
-                except Exception:
-                    pass
-            except Exception:
-                pass
-            return 0, None
-
-        def _get_skin_data(skin_id):
-            template = None
-            feature = None
-            try:
-                from gclient.data import gun_skin_template_data
-                data = getattr(gun_skin_template_data, 'data', None)
-                if isinstance(data, dict):
-                    value = data.get(skin_id)
-                    if isinstance(value, dict):
-                        template = value
-            except Exception:
-                pass
-            try:
-                from gclient.data import item_feature_data
-                data = getattr(item_feature_data, 'data', None)
-                if isinstance(data, dict):
-                    value = data.get(skin_id)
-                    if isinstance(value, dict):
-                        feature = value
-            except Exception:
-                pass
-            return template, feature
-
-        def _copy_skin_kill_broadcast_data(info, skin_id):
-            if not isinstance(info, dict) or not skin_id:
-                return
-            template, feature = _get_skin_data(skin_id)
-            info['guise_id'] = skin_id
-            info['guise_item_id'] = skin_id
-            info['guise_template_id'] = skin_id
-            info['hud_kill_ui'] = skin_id
-            prefixes = ('kill', 'broadcast', 'racer')
-            exact_keys = {
-                'kill_tip_icon', 'kill_tip_icon_replace', 'kill_icon', 'kill_icon_replace',
-                'kill_fx', 'kill_fx_id', 'kill_effect', 'kill_effect_id', 'kill_effect_type',
-                'kill_avatar_effect', 'kill_avatar_effect_id', 'kill_avatar_effect_id_replace',
-                'kill_racer_effect', 'kill_racer_effect_id', 'kill_racer_effect_id_replace',
-                'kill_broadcast', 'kill_broadcast_id', 'kill_broadcast_id_replace',
-                'broadcast_effect', 'broadcast_effect_id', 'broadcast_effect_id_replace',
-                'racer_effect', 'racer_effect_id',
-            }
-            for source in (template, feature):
-                if not isinstance(source, dict):
-                    continue
-                for key, value in source.items():
-                    if value is None:
-                        continue
-                    key_text = str(key)
-                    lower = key_text.lower()
-                    if key_text in exact_keys or lower.startswith(prefixes):
-                        info[key] = value
-            if isinstance(template, dict):
-                icon = template.get('kill_tip_icon_replace') or template.get('kill_tip_icon') or template.get('kill_icon_replace') or template.get('kill_icon')
-                if icon:
-                    info['weapon_icon'] = icon
-                    info['kill_tip_icon'] = icon
-
-        _force_kill_hud_skin = [None]
-
-        def _install_kill_feed(cls):
-            try:
-                if cls is None:
-                    return
-                backup = '_actual_skin_original_push_kill_record'
-                if hasattr(cls, backup):
-                    return
-                original_push = getattr(cls, 'PushKillRecord', None)
-                if not callable(original_push):
-                    return
-                setattr(cls, backup, original_push)
-
-                def PushKillRecordWithActualSkin(self, info, *args, **kwargs):
-                    is_my_kill = False
-                    try:
-                        if isinstance(info, dict):
-                            sp = getattr(Space, '_instance', None)
-                            owner = getattr(sp, 'owner', None) if sp else None
-                            ca = getattr(owner, 'combat_avatar', None) if owner else None
-                            if ca:
-                                my_id = getattr(ca, 'id', None)
-                                caster_id = info.get('caster_id')
-                                if my_id is not None and caster_id == my_id:
-                                    skin_id, _wc = _get_kill_skin(info)
-                                    if skin_id:
-                                        _copy_skin_kill_broadcast_data(info, skin_id)
-                                        _force_kill_hud_skin[0] = skin_id
-                                        is_my_kill = True
-                    except Exception:
-                        pass
-                    try:
-                        return original_push(self, info, *args, **kwargs)
-                    finally:
-                        if is_my_kill:
-                            _force_kill_hud_skin[0] = None
-
-                setattr(cls, 'PushKillRecord', PushKillRecordWithActualSkin)
-            except Exception:
-                pass
-
-        _install_kill_feed(HudKillRecordComp)
-        _install_kill_feed(HudKillRecordCompPC)
-        _install_kill_feed(HudKillRecordCompV2)
-
-        try:
-            import gclient.gameplay.uicomponents.hud_killrecord_comp as hkrc_mod
-            if not hasattr(hkrc_mod, '_orig_GetKillHudConfigForGameplay'):
-                hkrc_mod._orig_GetKillHudConfigForGameplay = hkrc_mod.GetKillHudConfigForGameplay
-
-                def _hooked_GetKillHudConfigForGameplay(guise_item_id, *args, **kwargs):
-                    use_id = guise_item_id
-                    forced = _force_kill_hud_skin[0]
-                    if forced:
-                        use_id = forced
-                    return hkrc_mod._orig_GetKillHudConfigForGameplay(use_id, *args, **kwargs)
-
-                hkrc_mod.GetKillHudConfigForGameplay = _hooked_GetKillHudConfigForGameplay
-        except Exception as e:
-            pass
-
-    except Exception as e:
-        pass
-
-    try:
-        from gclient.gameplay.logic_base.models.avatar_model import AvatarModel
-        _optional_skin_selection = {}
-
-        def _get_active_guise_id(info):
-            try:
-                sp = getattr(Space, '_instance', None)
-                if not sp:
-                    return None
-                lo = getattr(sp, 'owner', None)
-                ca = getattr(lo, 'combat_avatar', None) if lo else None
-                if not ca:
-                    return None
-                try:
-                    cur_weapon = ca.GetCurWeapon() if hasattr(ca, 'GetCurWeapon') else None
-                    if cur_weapon:
-                        wid = getattr(cur_weapon, 'weapon_id', None) or getattr(cur_weapon, 'equip_id', None)
-                        if wid:
-                            skin = _optional_skin_selection.get(wid, 0)
-                            if skin:
-                                return skin
-                            try:
-                                idx = int(sync_attrs.get(f'iSkin_{wid}', 0) or 0)
-                                wids = WEP.get(wid, [wid])[1:]
-                                if wids and 0 < idx <= len(wids):
-                                    return wids[idx - 1]
-                            except Exception:
-                                pass
-                except Exception:
-                    pass
-                try:
-                    wguid = info.get('weapon_guid') if isinstance(info, dict) else None
-                    if wguid and hasattr(ca, 'GetWeaponCase'):
-                        wc = ca.GetWeaponCase(wguid)
-                        if wc:
-                            guise_id = getattr(wc, 'guise_id', None) or getattr(wc, 'guise_item_id', None) or wc.__dict__.get('guise_id') or wc.__dict__.get('guise_item_id')
-                            if guise_id:
-                                return guise_id
-                            wid = getattr(wc, 'weapon_id', 0)
-                            if wid:
-                                skin = _optional_skin_selection.get(wid, 0)
-                                if skin:
-                                    return skin
-                except Exception:
-                    pass
-                try:
-                    if hasattr(ca, 'weapon_cases') and ca.weapon_cases:
-                        for wc in ca.weapon_cases.values():
-                            guise_id = getattr(wc, 'guise_id', None) or getattr(wc, 'guise_item_id', None) or wc.__dict__.get('guise_id') or wc.__dict__.get('guise_item_id')
-                            if guise_id:
-                                return guise_id
-                            wid = getattr(wc, 'weapon_id', 0)
-                            if wid:
-                                skin = _optional_skin_selection.get(wid, 0)
-                                if skin:
-                                    return skin
-                except Exception:
-                    pass
-            except Exception:
-                pass
-            return None
-
-        def _ensure_kill_effect_data(guise_id):
-            if not guise_id:
-                return
-            try:
-                from gclient.data import item_feature_data
-                if hasattr(item_feature_data, 'data'):
-                    if guise_id not in item_feature_data.data:
-                        item_feature_data.data[guise_id] = {}
-                    item_feature_data.data[guise_id]['kill_effect'] = True
-            except Exception:
-                pass
-            try:
-                from gclient.data import gun_skin_template_data
-                if hasattr(gun_skin_template_data, 'data'):
-                    if guise_id not in gun_skin_template_data.data:
-                        gun_skin_template_data.data[guise_id] = {
-                            'dlc_id': None,
-                            'kill_fx': True,
-                            'die_action_attach_model_id': None,
-                            'die_action_attach_model_time': 0.0,
-                            'die_action_disappear_time': 0.0,
-                            'SpecialDieActionPose': None,
-                        }
-                    else:
-                        entry = gun_skin_template_data.data[guise_id]
-                        if isinstance(entry, dict):
-                            if 'kill_fx' not in entry:
-                                entry['kill_fx'] = True
-            except Exception:
-                pass
-
-        @HOOK(AvatarModel, bLog=False)
-        def PlaySkinDeadAnimAndEffect(self, info, *args, **kwargs):
-            try:
-                if sync_attrs.get('bSkinHack', False):
-                    guise_id = _get_active_guise_id(info)
-                    if guise_id:
-                        _ensure_kill_effect_data(guise_id)
-                        try:
-                            owner = getattr(self, 'owner', None)
-                            if owner and hasattr(owner, 'final_kill_info'):
-                                import _pickle as cPickle
-                                raw_fki = owner.final_kill_info
-                                if raw_fki:
-                                    fki = cPickle.loads(raw_fki)
-                                    if isinstance(fki, dict):
-                                        fki['guise_item_id'] = guise_id
-                                        fki['guise_template_id'] = guise_id
-                                        fki.pop('kill_team_guise_item_id', None)
-                                        fki['kill_effect'] = True
-                                        owner.final_kill_info = cPickle.dumps(fki)
-                        except Exception:
-                            pass
-                        if isinstance(info, dict):
-                            info['guise_item_id'] = guise_id
-                            info['guise_template_id'] = guise_id
-                            info['kill_effect'] = True
-            except Exception:
-                pass
-            return self._PlaySkinDeadAnimAndEffect(info, *args, **kwargs)
-
-        @HOOK(AvatarModel, bLog=False)
-        def PlaySkinDeadEffect(self, sfx_info, material, time_offset, info, *args, **kwargs):
-            try:
-                if sync_attrs.get('bSkinHack', False):
-                    guise_id = _get_active_guise_id(info)
-                    if guise_id and isinstance(info, dict):
-                        _ensure_kill_effect_data(guise_id)
-                        info['guise_item_id'] = guise_id
-                        info['guise_template_id'] = guise_id
-                        info['kill_effect'] = True
-            except Exception:
-                pass
-            return self._PlaySkinDeadEffect(sfx_info, material, time_offset, info, *args, **kwargs)
-
-    except Exception:
-        pass
-
-except Exception:
-    WEP = {1: ['M4A1', 11100002]}
-    WEP_NAMES = {1: 'M4A1'}
-
-_skinsel = {}
-
-def _load_skinsel():
-    global _skinsel
-    _skinsel = {}
-    for key, value in sync_attrs.items():
-        if key.startswith('iSkin_'):
-            equip_id = key.replace('iSkin_', '')
-            if value > 0:
-                _skinsel[str(equip_id)] = value
-
-def _pick_wep_skin(equip_id):
-    try:
-        _load_skinsel()
-        sel = _skinsel.get(str(int(equip_id)))
-        if sel:
-            return sel
-        return None
-    except:
-        return None
-
-def _get_forced_skin(equip_id):
-    if equip_id not in WEP:
-        return None
-    wids = WEP[equip_id][1:]
-    idx = sync_attrs.get(f'iSkin_{equip_id}', 0)
-    return wids[idx - 1] if wids and 0 < idx <= len(wids) else None
-
-@HOOK(EquipCaseFactory, 0)
-def Create(wid, *args, **kwargs):
-    args_list = list(args)
-    forced_skin = None
-    if sync_attrs.get('bSkinHack') and wid in WEP:
-        skin_index = sync_attrs.get(f'iSkin_{wid}', 0)
-        wids = WEP[wid][1:]
-        if wids and 0 < skin_index <= len(wids):
-            forced_skin = wids[skin_index - 1]
-            if len(args_list) > 4:
-                args_list[4] = forced_skin
-    result = EquipCaseFactory._Create(wid, *args_list, **kwargs)
-    if result and sync_attrs.get('bSkinHack'):
-        try:
-            if hasattr(result, 'upgrade_level'):
-                result.upgrade_level = 10
-        except:
-            pass
-        if forced_skin is not None:
-            try:
-                if hasattr(result, 'ClearGuiseItemCache'):
-                    result.ClearGuiseItemCache()
-            except:
-                pass
-            try:
-                if hasattr(result, 'ChangeWeaponGuise'):
-                    result.ChangeWeaponGuise(forced_skin, guise_item_id=forced_skin)
-            except:
-                pass
-            skin_data = WEP_SKIN_INFO.get(forced_skin, {})
-            try:
-                if hasattr(result, 'ChangeWeaponOpticReticle') and skin_data.get('skin_optic_id'):
-                    result.ChangeWeaponOpticReticle(skin_data['skin_optic_id'])
-            except Exception:
-                pass
-            for attr_name, attr_val in (
-                ('show_guise_bullet_trace', True),
-                ('show_guise_hit_effect', True),
-                ('guise_item_id', forced_skin),
-                ('guise_id', forced_skin),
-                ('skin_id', forced_skin),
-            ):
-                if attr_val is None:
-                    continue
-                try:
-                    setattr(result, attr_name, attr_val)
-                except Exception:
-                    pass
-            for refresh_method in (
-                'RefreshGuiseEffect',
-                'RefreshGuise3PEffectInCombat',
-                'RefreshRacerForChangeGuise',
-                'RefreshFireSfxId',
-                'RefreshFireSfxIdForGunPart',
-                'RefreshKillCounterForChangeGuise',
-            ):
-                try:
-                    if hasattr(result, refresh_method):
-                        getattr(result, refresh_method)()
-                except Exception:
-                    pass
-    return result
-
-@HOOK(Doll, 0)
-def AddWeaponForDoll(self, equip_id=None, skin_id=None, guise_id=None, part_slots=None, extra=None, *args, **kwargs):
-    if sync_attrs.get('bSkinHack') and equip_id is not None and equip_id in WEP:
-        try:
-            idx = sync_attrs.get(f'iSkin_{equip_id}', 0)
-            wids = WEP[equip_id][1:]
-            if wids and 0 < idx <= len(wids):
-                new_skin = wids[idx - 1]
-                if guise_id is not None:
-                    guise_id = new_skin
-                elif skin_id is not None:
-                    skin_id = new_skin
-        except:
-            pass
-    return Doll._AddWeaponForDoll(self, equip_id, skin_id, guise_id, part_slots, extra, *args, **kwargs)
-
-@HOOK(Doll, 0)
-def AddWeaponByEquipId(self, equip_id=None, skin_id=None, guise_id=None, part_slots=None, principle_role=False, extra=None, *args, **kwargs):
-    if sync_attrs.get('bSkinHack') and equip_id is not None and equip_id in WEP:
-        try:
-            idx = sync_attrs.get(f'iSkin_{equip_id}', 0)
-            wids = WEP[equip_id][1:]
-            if wids and 0 < idx <= len(wids):
-                new_skin = wids[idx - 1]
-                if guise_id is not None:
-                    guise_id = new_skin
-                elif skin_id is not None:
-                    skin_id = new_skin
-        except:
-            pass
-    return Doll._AddWeaponByEquipId(self, equip_id, skin_id, guise_id, part_slots, principle_role, extra, *args, **kwargs)
-
-@HOOK(Doll, 0)
-def _DoAddWeapon(self, equip_id, skin_id, guise_id, part_slots, extra=None, is_reload=False, *args, **kwargs):
-    if sync_attrs.get('bSkinHack') and equip_id is not None and equip_id in WEP:
-        try:
-            idx = sync_attrs.get(f'iSkin_{equip_id}', 0)
-            wids = WEP[equip_id][1:]
-            if wids and 0 < idx <= len(wids):
-                new_skin = wids[idx - 1]
-                if guise_id is not None:
-                    guise_id = new_skin
-                elif skin_id is not None:
-                    skin_id = new_skin
-        except:
-            pass
-    return Doll.__DoAddWeapon(self, equip_id, skin_id, guise_id, part_slots, extra, is_reload, *args, **kwargs)
-
-@HOOK(Doll, 0)
-def ChangeWeaponSkinId(self, skin_id, *args, **kwargs):
-    if sync_attrs.get('bSkinHack'):
-        try:
-            equip_id = getattr(self, 'equip_id', 0)
-            if equip_id in WEP:
-                idx = sync_attrs.get(f'iSkin_{equip_id}', 0)
-                wids = WEP[equip_id][1:]
-                if wids and 0 < idx <= len(wids):
-                    skin_id = wids[idx - 1]
-        except:
-            pass
-    return Doll._ChangeWeaponSkinId(self, skin_id, *args, **kwargs)
-
-# ============================================================
-# HERO SKIN HACK
-# ============================================================
-
-HERO = {}
-HERO_SKIN_INFO = {}
-
-try:
-    import gclient.data.hero_data as hd
-    import gclient.data.lobby_item_data as lid
-    from gclient.framework.entities.avatar import PlayerAvatar
-    from gclient.gamesystem.entities.hall_doll import Doll, DollLike, CalculationDoll, BigHeadCalculationDoll
-    from gclient.gamesystem.models.hall_show_model import HallShowModel
-    from gclient.gameplay.logic_base.entities.combat_avatar import CombatAvatar
-    import time, threading
-
-    for hero_id, hero_proto in hd.data.items():
-        HERO[hero_id] = [hero_proto.get('hero_name', str(hero_id))]
-
-    for item_id, item_proto in lid.data.items():
-        is_hero_skin = (
-            item_proto.get('sub_type') == 300 or
-            item_proto.get('short_desc') == 'Striker' or
-            (item_proto.get('hero_id') and item_proto.get('hero_skin_id') is not None)
-        )
-        if not is_hero_skin:
-            continue
-        hero_id = item_proto.get('hero_id')
-        if not hero_id or hero_id not in HERO:
-            continue
-        if item_id == hd.data.get(hero_id, {}).get('hero_item_id'):
-            continue
-        HERO_SKIN_INFO[item_id] = item_proto
-        if item_id not in HERO[hero_id]:
-            HERO[hero_id].append(item_id)
-
-    def _build_hero_info_lines():
-        lines = []
-        for hero_id, entries in HERO.items():
-            lines.append(f"H|{hero_id}|{entries[0]}")
-            for idx, skin_id in enumerate(entries[1:], start=1):
-                skin_proto = HERO_SKIN_INFO.get(skin_id, {})
-                skin_name = skin_proto.get('name', f"Skin_{skin_id}") if isinstance(skin_proto, dict) else str(skin_proto)
-                lines.append(f"K|{hero_id}|{idx}|{skin_name}")
-        lines.append("END")
-        return "\n".join(lines)
-
-    def _send_hero_info():
-        try:
-            payload = _build_hero_info_lines() + "\n"
-            _write_udp_hero(payload)
-            for _ in range(3):
-                time.sleep(0.1)
-                _write_udp_hero("\n")
-        except:
-            pass
-
-    _send_hero_info()
-
-    try:
-        with open("/storage/emulated/0/Nexora/nexora_herobuild_debug.txt", "a") as f:
-            f.write(
-                "HERO dict count=%d sample=%r\nHERO_SKIN_INFO count=%d sample=%r\nhd.data count=%d\nlid.data count=%d\n"
-                % (
-                    len(HERO), dict(list(HERO.items())[:3]),
-                    len(HERO_SKIN_INFO), dict(list(HERO_SKIN_INFO.items())[:2]),
-                    len(hd.data), len(lid.data),
-                )
-            )
-    except Exception as _hbe:
-        try:
-            with open("/storage/emulated/0/Nexora/nexora_herobuild_debug.txt", "a") as f:
-                f.write("BUILD LOG ERROR: %r\n" % (_hbe,))
-        except Exception:
-            pass
-
-    def _hero_sender_loop():
-        while True:
-            time.sleep(2)
-            _send_hero_info()
-
-    threading.Thread(target=_hero_sender_loop, daemon=True).start()
-
-    def _get_forced_skin(hero_id):
-        if hero_id not in HERO:
-            return None
-        sids = HERO[hero_id][1:]
-        idx = sync_attrs.get(f'iHeroSkin_{hero_id}', 0)
-        if sids and 0 < idx <= len(sids):
-            return sids[idx - 1]
-        return None
-
-    def _get_forced_skin_proto(hero_id):
-        skin_id = _get_forced_skin(hero_id)
-        if skin_id and skin_id in lid.data:
-            return lid.data[skin_id]
-        return None
-
-    def _get_forced_model_id(hero_id):
-        proto = _get_forced_skin_proto(hero_id)
-        if proto:
-            return proto.get('model_id')
-        return None
-
-    def _hook_hero_skin_proto(cls):
-        orig_prop = cls.__dict__.get('hero_skin_proto')
-        if orig_prop is None or not isinstance(orig_prop, property):
-            return
-        orig_get = orig_prop.fget
-        
-        def _getter(self):
-            result = orig_get(self)
-            if sync_attrs.get('bHeroSkinHack', False):
-                hero_id = None
-                if hasattr(self, 'GetHeroId'):
-                    hero_id = self.GetHeroId()
-                elif hasattr(self, 'hero_id'):
-                    hero_id = self.hero_id
-                if hero_id:
-                    forced = _get_forced_skin_proto(hero_id)
-                    if forced:
-                        return forced
-            return result
-        
-        setattr(cls, 'hero_skin_proto', property(_getter))
-
-    for cls in (PlayerAvatar, CombatAvatar, Doll, DollLike, CalculationDoll, BigHeadCalculationDoll):
-        try:
-            _hook_hero_skin_proto(cls)
-        except:
-            pass
-
-    @HOOK(PlayerAvatar, 0)
-    def GetHeroSkinProto(self, hero_id, skin_item_id, *args, **kwargs):
-        if sync_attrs.get('bHeroSkinHack', False):
-            if hero_id is None or hero_id == 0:
-                owner = getattr(self, 'owner', None)
-                if owner and hasattr(owner, 'GetHeroId'):
-                    hero_id = owner.GetHeroId()
-            if hero_id:
-                forced = _get_forced_skin(hero_id)
-                if forced and forced in lid.data:
-                    skin_item_id = forced
-                    return lid.data[forced]
-        return PlayerAvatar._GetHeroSkinProto(self, hero_id, skin_item_id, *args, **kwargs)
-
-    @HOOK(HallShowModel, 0)
-    def Load(self, data, done=None, **create_kwargs):
-        try:
-            if sync_attrs.get('bHeroSkinHack', False):
-                hero_id = None
-                if hasattr(self, 'owner') and self.owner:
-                    if hasattr(self.owner, 'GetHeroId'):
-                        hero_id = self.owner.GetHeroId()
-                if hero_id:
-                    model_id = _get_forced_model_id(hero_id)
-                    if model_id and isinstance(data, dict):
-                        data['model_id'] = model_id
-                        data['id'] = model_id
-        except:
-            pass
-        return HallShowModel._Load(self, data, done, **create_kwargs)
-
-    @HOOK(HallShowModel, 0)
-    def Reload(self, data, done=None, use_ready_to_appear=True):
-        try:
-            if sync_attrs.get('bHeroSkinHack', False):
-                hero_id = None
-                if hasattr(self, 'owner') and self.owner:
-                    if hasattr(self.owner, 'GetHeroId'):
-                        hero_id = self.owner.GetHeroId()
-                if hero_id:
-                    model_id = _get_forced_model_id(hero_id)
-                    if model_id and isinstance(data, dict):
-                        data['model_id'] = model_id
-                        data['id'] = model_id
-        except:
-            pass
-        return HallShowModel._Reload(self, data, done, use_ready_to_appear)
-
-    @HOOK(Doll, 0)
-    def GetModelUnitID(self, _download_info=None):
-        try:
-            if sync_attrs.get('bHeroSkinHack', False):
-                hero_id = None
-                if hasattr(self, 'GetHeroId'):
-                    hero_id = self.GetHeroId()
-                if hero_id:
-                    model_id = _get_forced_model_id(hero_id)
-                    if model_id:
-                        return model_id
-        except:
-            pass
-        return Doll._GetModelUnitID(self, _download_info)
-
-    @HOOK(Doll, 0)
-    def GetModelComponentList(self, _download_info=None):
-        try:
-            if sync_attrs.get('bHeroSkinHack', False):
-                hero_id = None
-                if hasattr(self, 'GetHeroId'):
-                    hero_id = self.GetHeroId()
-                if hero_id:
-                    model_id = _get_forced_model_id(hero_id)
-                    if model_id:
-                        if _download_info is None:
-                            _download_info = {}
-                        _download_info['model_id'] = model_id
-                        _download_info['forced_model_id'] = model_id
-        except:
-            pass
-        return Doll._GetModelComponentList(self, _download_info)
-
-    for cls in (Doll, DollLike, CalculationDoll, BigHeadCalculationDoll):
-        @HOOK(cls, 0)
-        def ShowHeroSkinModel(self, item_proto, *args, **kwargs):
-            if sync_attrs.get('bHeroSkinHack', False) and item_proto is not None:
-                hero_id = item_proto.get('hero_id') if hasattr(item_proto, 'get') else None
-                if hero_id is None and hasattr(self, 'GetHeroId'):
-                    hero_id = self.GetHeroId()
-                if hero_id:
-                    skin_proto = _get_forced_skin_proto(hero_id)
-                    if skin_proto:
-                        item_proto = skin_proto
-            return cls._ShowHeroSkinModel(self, item_proto, *args, **kwargs)
-
-    @HOOK(Doll, 0)
-    def ShowDisplayModel(self, item_proto, display_loop=False, callback=None, *args, **kwargs):
-        if sync_attrs.get('bHeroSkinHack', False) and item_proto is not None:
-            hero_id = item_proto.get('hero_id') if hasattr(item_proto, 'get') else None
-            if hero_id is None and hasattr(self, 'GetHeroId'):
-                hero_id = self.GetHeroId()
-            if hero_id:
-                skin_proto = _get_forced_skin_proto(hero_id)
-                if skin_proto:
-                    item_proto = skin_proto
-        return Doll._ShowDisplayModel(self, item_proto, display_loop, callback, *args, **kwargs)
-
-    @HOOK(HallShowModel, 0)
-    def ClearHeroSkinInfo(self, smooth=False, *args, **kwargs):
-        result = HallShowModel._ClearHeroSkinInfo(self, smooth, *args, **kwargs)
-        if sync_attrs.get('bHeroSkinHack', False):
-            try:
-                owner = getattr(self, 'owner', None)
-                if owner and hasattr(owner, 'GetHeroId'):
-                    hero_id = owner.GetHeroId()
-                    if hero_id:
-                        skin_proto = _get_forced_skin_proto(hero_id)
-                        if skin_proto and hasattr(self, 'ShowHeroSkinModel'):
-                            self.ShowHeroSkinModel(skin_proto, is_idle=True)
-            except:
-                pass
-        return result
-
-    @HOOK(HallShowModel, 0)
-    def CueChangeHeroSkin(self, *args, **kwargs):
-        result = HallShowModel._CueChangeHeroSkin(self, *args, **kwargs)
-        if sync_attrs.get('bHeroSkinHack', False):
-            try:
-                owner = getattr(self, 'owner', None)
-                if owner and hasattr(owner, 'GetHeroId'):
-                    hero_id = owner.GetHeroId()
-                    if hero_id:
-                        skin_proto = _get_forced_skin_proto(hero_id)
-                        if skin_proto and hasattr(self, 'ShowHeroSkinModel'):
-                            self.ShowHeroSkinModel(skin_proto, is_idle=True)
-            except:
-                pass
-        return result
-
-except Exception as _hero_section_error:
-    HERO = {1: ['Default']}
-    try:
-        with open("/storage/emulated/0/Nexora/nexora_herobuild_debug.txt", "a") as f:
-            f.write("WHOLE SECTION CRASHED: %r\n" % (_hero_section_error,))
-    except Exception:
-        pass
 
 _XRAY_COLORS = ((1,0,0), (0,1,0), (1,1,1), (0,0.5,1), (1,0,1))
 
@@ -1231,6 +234,9 @@ def EspUpdate(*_, **__):
     entities = []
     _bLootESP = sync_attrs.get('bLootESP', False)
     _LOOT_MAX_DIST = float(sync_attrs.get('fLootESP_MaxDist', 120.0))
+    _bHealth = sync_attrs.get('bESP_Health', True)
+    _bWeapon = sync_attrs.get('bESP_Weapon', True)
+    _bSkeleton = sync_attrs.get('bESP_Skeleton', False)
 
     for entity_id, entity in list(inst.entities.items()):
         try:
@@ -1245,7 +251,7 @@ def EspUpdate(*_, **__):
                             is_on_screen_i = screen.z > 0.0
                             bones_i = {"head": [screen.x, screen.y]} if is_on_screen_i else {}
                             item_id = _get_item_id(entity)
-                            item_proto = lid.data.get(item_id, {}) if item_id else {}
+                            item_proto = _lobby_item_data.data.get(item_id, {}) if (item_id and _lobby_item_data) else {}
                             item_label = item_proto.get('name', 'Unknown') if hasattr(item_proto, 'get') else 'Unknown'
                             item_count = 1
                             try:
@@ -1299,7 +305,6 @@ def EspUpdate(*_, **__):
             if is_on_screen:
                 bones["head"] = [head_screen.x, head_screen.y]
 
-            _bSkeleton = sync_attrs.get('bESP_Skeleton', False)
             if _bSkeleton and is_on_screen:
                 for key, bone_name in _ESP_BONES:
                     s = get_bone_screen(model, bone_name)
@@ -1308,20 +313,9 @@ def EspUpdate(*_, **__):
 
             player_name  = getattr(entity, 'name', 'Unknown')
             is_bot       = bool(entity.IsRobotCombatAvatar)
-            hp          = float(getattr(entity, 'hp', 0))
-            maxhp       = float(getattr(entity, 'cur_maxhp', 100))
-            armor       = float(getattr(entity, 'armor', 0.0))
-            is_titan    = maxhp >= 2000.0
             is_knocked = bool(entity.is_dying_state)
-            weapon_name = 'Punk'
-            try:
-                w = entity.GetCurWeapon()
-                if w:
-                    weapon_name = WEP_NAMES.get(int(w.equip_id), 'Punk')
-            except: pass
             is_visible = IsVisible(_cam_pos, entityHeadPos, entity.id) if _bVisCheck else True
-
-            entities.append({
+            entry = {
                 "name": player_name,
                 "is_zombie": is_zombie,
                 "is_bot": is_bot,
@@ -1331,12 +325,23 @@ def EspUpdate(*_, **__):
                 "is_visible": is_visible,
                 "is_alive": True,
                 "is_knocked": is_knocked,
-                "is_health": hp,
-                "cur_maxhp": maxhp,
-                "is_armor": armor,
-                "is_titan": is_titan,
-                "weapon_name": weapon_name,
-            })
+            }
+            # Only gather what the enabled C++ overlay actually draws. The
+            # parser on the other side is j.value(key, default), so a key that
+            # is left out simply falls back to its default - and the GetCurWeapon
+            # lookup below is an engine call per entity per frame, so it is worth
+            # skipping when the weapon label is off.
+            if _bHealth:
+                entry["is_health"] = float(getattr(entity, 'hp', 0))
+                entry["cur_maxhp"] = float(getattr(entity, 'cur_maxhp', 100))
+                entry["is_armor"] = float(getattr(entity, 'armor', 0.0))
+            if _bWeapon:
+                try:
+                    w = entity.GetCurWeapon()
+                    if w:
+                        entry["weapon_name"] = _wep_name(int(w.equip_id))
+                except: pass
+            entities.append(entry)
         except:
             continue
 
@@ -1486,7 +491,7 @@ def AIM_AutoTune(localEntity, enemy_data):
 
 @TRY
 def AIMUpdate(*_, **__):
-    global FpsPlacerInstance, _ai_tune_frame
+    global FpsPlacerInstance, _ai_tune_frame, _aim_pos_track
     try:
         if not sync_attrs.get('bAIM', False) or not genv.avatar:
             return
@@ -1608,6 +613,9 @@ def AIMUpdate(*_, **__):
                 if fov_dist <= max_fov:
                     candidates.append((fov_dist, pred_x, pred_y, dist3d, entityId))
             except: continue
+        # Prune aim tracker to prevent unbounded growth
+        aim_ids = {c[4] for c in candidates}
+        _aim_pos_track = {k: v for k, v in _aim_pos_track.items() if k in aim_ids}
         if not candidates:
             return
         candidates.sort(key=lambda x: x[0])
@@ -1628,47 +636,7 @@ def on_space_tick(dtime):
             EspUpdate()
         if sync_attrs.get('bAIM', False):
             AIMUpdate()
-        PlayerMovementUpdate()
     except:
-        pass
-
-def PlayerMovementUpdate():
-    try:
-        if not genv.avatar:
-            return
-        localEntity = genv.avatar.combat_avatar
-        if not localEntity:
-            return
-
-        if sync_attrs.get('bFly', False):
-            try:
-                cur_pos = localEntity.position
-                y = sync_attrs.get('fFlyHeight', 50.0)
-                if isinstance(cur_pos, (tuple, list)):
-                    cx, cz = cur_pos[0], cur_pos[2]
-                else:
-                    cx, cz = cur_pos.x, cur_pos.z
-                new_pos = (cx, y, cz)
-                if hasattr(localEntity, 'ClientAdjustPosition'):
-                    localEntity.ClientAdjustPosition(new_pos)
-                else:
-                    localEntity.position = new_pos
-            except Exception:
-                pass
-
-        if sync_attrs.get('bTeleport', False):
-            try:
-                x = sync_attrs.get('fTeleportX', 0.0)
-                y = sync_attrs.get('fTeleportY', 5.0)
-                z = sync_attrs.get('fTeleportZ', 0.0)
-                if hasattr(localEntity, 'ClientAdjustPosition'):
-                    localEntity.ClientAdjustPosition((x, y, z))
-                else:
-                    localEntity.position = (x, y, z)
-            except Exception:
-                pass
-            sync_attrs['bTeleport'] = False
-    except Exception:
         pass
 
 @HOOK(PlayerCombatAvatar, 0)
@@ -1677,156 +645,6 @@ def on_enter_space(self, *args, **kwargs):
     Space._instance.AddSpacePostTick(on_space_tick)
     return result
 
-try:
-    from gclient.gameplay.logic_base.entities.combatavatarmembers import cimp_report
-    if not hasattr(cimp_report.PlayerCombatAvatarMember, '_orig_generate_report'):
-        cimp_report.PlayerCombatAvatarMember._orig_generate_report = cimp_report.PlayerCombatAvatarMember.GenerateReportDataInGame
-
-    @HOOK(cimp_report.PlayerCombatAvatarMember, 0)
-    def GenerateReportDataInGame(self, *args, **kwargs):
-        if sync_attrs.get('bBlockReport', False):
-            return {}
-        return cimp_report.PlayerCombatAvatarMember._orig_generate_report(self, *args, **kwargs)
-
-except Exception:
-    pass
-
-# ============================================================
-# PLAYER MODS
-# ============================================================
-
-from gclient.gameplay.logic_base.entities.combat_avatar import PlayerCombatAvatar
-
-@HOOK(PlayerCombatAvatar, 0)
-def OnDead(self, *args, **kwargs):
-    if sync_attrs.get('bGodMode', False):
-        if hasattr(self, 'hp'):
-            self.hp = self.cur_maxhp
-        return
-    return PlayerCombatAvatar._OnDead(self, *args, **kwargs)
-
-@HOOK(PlayerCombatAvatar, 0)
-def OnDying(self, is_dying, *args, **kwargs):
-    if sync_attrs.get('bGodMode', False) or sync_attrs.get('bAntiKnock', False):
-        if is_dying:
-            return
-    return PlayerCombatAvatar._OnDying(self, is_dying, *args, **kwargs)
-
-@HOOK(PlayerCombatAvatar, 0)
-def ApplyDamageImpact(self, *args, **kwargs):
-    if sync_attrs.get('bGodMode', False):
-        return
-    if sync_attrs.get('bNoFallDamage', False):
-        try:
-            if args and len(args) > 0:
-                damage_data = args[0]
-                if hasattr(damage_data, 'fall_damage') and damage_data.fall_damage:
-                    return
-        except:
-            pass
-    return PlayerCombatAvatar._ApplyDamageImpact(self, *args, **kwargs)
-
-@HOOK(PlayerCombatAvatar, 0)
-def AddBuffSpell(self, spell_id, spell_level, item_guid, *args, **kwargs):
-    result = PlayerCombatAvatar._AddBuffSpell(self, spell_id, spell_level, item_guid, *args, **kwargs)
-    if sync_attrs.get('bNoCooldown', False):
-        if hasattr(self, 'skill_cooldown'):
-            self.skill_cooldown = 0.0
-        if hasattr(self, 'skill_timer'):
-            self.skill_timer = 0.0
-    return result
-
-@HOOK(PlayerCombatAvatar, 0)
-def AddCameraEffect(self, effect_id, keep_time=-1, color=None, holding=False, *args, **kwargs):
-    if sync_attrs.get('bNoFlash', False):
-        if effect_id == 7:
-            return
-    return PlayerCombatAvatar._AddCameraEffect(self, effect_id, keep_time, color, holding, *args, **kwargs)
-
-@HOOK(PlayerCombatAvatar, 0)
-def GetRealJumpVecY(self, jump_time_interval, accumulated_time=0, *args, **kwargs):
-    result = PlayerCombatAvatar._GetRealJumpVecY(self, jump_time_interval, accumulated_time, *args, **kwargs)
-    if sync_attrs.get('bSuperJump', False) and result is not None:
-        try:
-            mult = sync_attrs.get('fJumpMult', 2.0)
-            return result * mult
-        except Exception:
-            pass
-    return result
-
-@HOOK(PlayerCombatAvatar, 0)
-def CheckSuitableExecuteTargetPos(self, target_id, *args, **kwargs):
-    if sync_attrs.get('bExecuteRangeHack', False):
-        try:
-            max_range = sync_attrs.get('fExecuteRange', 1.5)
-            sp = getattr(Space, '_instance', None)
-            target = sp.entities.get(target_id) if sp and hasattr(sp, 'entities') else None
-            if target is not None:
-                sm = getattr(self, 'model', None)
-                tm = getattr(target, 'model', None)
-                if sm and tm:
-                    sp_pos = self.position
-                    tp_pos = target.position
-                    sx = sp_pos[0] if isinstance(sp_pos, (tuple, list)) else sp_pos.x
-                    sz = sp_pos[2] if isinstance(sp_pos, (tuple, list)) else sp_pos.z
-                    tx = tp_pos[0] if isinstance(tp_pos, (tuple, list)) else tp_pos.x
-                    tz = tp_pos[2] if isinstance(tp_pos, (tuple, list)) else tp_pos.z
-                    dist = ((sx - tx) ** 2 + (sz - tz) ** 2) ** 0.5
-                    if dist <= max_range:
-                        return True
-        except Exception:
-            pass
-    return PlayerCombatAvatar._CheckSuitableExecuteTargetPos(self, target_id, *args, **kwargs)
-
-@HOOK(PlayerCombatAvatar, 0)
-def CheckCanExecuteForCollision(self, target_id, *args, **kwargs):
-    if sync_attrs.get('bExecuteRangeHack', False):
-        return True
-    return PlayerCombatAvatar._CheckCanExecuteForCollision(self, target_id, *args, **kwargs)
-
-@HOOK(PlayerCombatAvatar, 0)
-def _OnChangeToCloseParachute(self, old, *args, **kwargs):
-    if sync_attrs.get('bFly', False):
-        return
-    return PlayerCombatAvatar.__OnChangeToCloseParachute(self, old, *args, **kwargs)
-
-@HOOK(PlayerCombatAvatar, 0)
-def on_setattr(self, key, old, new, *args, **kwargs):
-    result = PlayerCombatAvatar._on_setattr(self, key, old, new, *args, **kwargs)
-    try:
-        if sync_attrs.get('bInfiniteStamina', False):
-            if key == 'stamina':
-                self.stamina = 100.0
-        
-        if sync_attrs.get('bSpeedHack', False):
-            if key == 'speed':
-                mult = sync_attrs.get('fSpeedMult', 1.5)
-                self.speed = new * mult
-        
-        if sync_attrs.get('bWaterWalk', False):
-            if key == 'position' or key == 'pos':
-                water_level = sync_attrs.get('fWaterLevel', 0.0)
-                if new.y < water_level:
-                    if hasattr(self, 'position'):
-                        self.position = (new.x, water_level + 0.5, new.z)
-                    else:
-                        self.pos = (new.x, water_level + 0.5, new.z)
-        
-        if sync_attrs.get('bAirStuck', False):
-            if key == 'position' or key == 'pos':
-                if hasattr(self, 'is_on_sky') and self.is_on_sky:
-                    height = sync_attrs.get('fAirStuckHeight', 30.0)
-                    if hasattr(self, 'position'):
-                        self.position = (new.x, height, new.z)
-                    else:
-                        self.pos = (new.x, height, new.z)
-        
-        if sync_attrs.get('bNoGravity', False):
-            if key == 'gravity':
-                self.gravity = 0.0
-    except:
-        pass
-    return result
 
 # ============================================================
 # WEAPON MODS

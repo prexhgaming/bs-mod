@@ -231,12 +231,6 @@ void SetDefaultConfig() {
     sync_bool["bWESP_Vehicle"] = false; sync_bool["bWESP_Airdrop"] = false;
     sync_bool["bWESP_Supply"] = false; sync_float["fWorldESP_MaxDist"] = 300.f;
     sync_bool["bESP_FacingWarning"] = false;
-    sync_bool["bGodMode"] = false; sync_bool["bFly"] = false;
-    sync_bool["bTeleport"] = false; sync_bool["bNoCooldown"] = false;
-    sync_bool["bSuperJump"] = false; sync_bool["bSpeedHack"] = false;
-    sync_bool["bNoGravity"] = false; sync_bool["bNoFallDamage"] = false;
-    sync_bool["bInfiniteStamina"] = false; sync_bool["bWaterWalk"] = false;
-    sync_bool["bAirStuck"] = false;
     sync_bool["bNoRecoil"] = false; sync_bool["bNoSpread"] = false;
     sync_bool["bNoSway"] = false; sync_bool["bRapidFire"] = false;
     sync_bool["bFastReload"] = false; sync_bool["bInstantSwitch"] = false;
@@ -250,13 +244,7 @@ void SetDefaultConfig() {
     sync_bool["bFOVHack"] = false; sync_bool["bNoBreath"] = false;
     sync_bool["bNoAimShake"] = false; sync_bool["bNoRecoilCam"] = false;
     sync_bool["bNoScopeSway"] = false; sync_bool["bThirdPerson"] = false;
-    sync_bool["bFreeCamera"] = false; sync_bool["bNoFlash"] = false;
     sync_bool["bZoomHack"] = false; sync_bool["bNoCamShake"] = false;
-    sync_bool["bAntiKnock"] = false; sync_bool["bExecuteRangeHack"] = false;
-    sync_float["fFlyHeight"] = 50.0f; sync_float["fJumpMult"] = 2.0f;
-    sync_float["fSpeedMult"] = 2.0f; sync_float["fTeleportX"] = 0.0f;
-    sync_float["fTeleportY"] = 0.0f; sync_float["fTeleportZ"] = 0.0f;
-    sync_float["fAirStuckHeight"] = 50.0f; sync_float["fExecuteRange"] = 1.5f;
     sync_float["fFireRateMult"] = 1.0f; sync_float["fReloadSpeedMult"] = 1.0f;
     sync_float["fSwitchSpeedMult"] = 1.0f; sync_float["fADSSpeedMult"] = 1.0f;
     sync_float["fSniperReloadMult"] = 1.0f; sync_float["fSniperZoomValue"] = 1.0f;

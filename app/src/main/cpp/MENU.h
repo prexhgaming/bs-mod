@@ -241,10 +241,9 @@ void DrawMenu(ImGuiIO& io) {
         "Aimbot",
         "Visuals",
         "Weapon",
-        "Settings",
-        "Memory"
+        "Settings"
     };
-    const int navCount = 6;
+    const int navCount = 5;
     float navStartY = wp.y + 56.f, navItemH = 38.f;
     for (int i = 0; i < navCount; i++) {
         float ny = navStartY + i * navItemH;
@@ -457,51 +456,6 @@ void DrawMenu(ImGuiIO& io) {
         NS_InfoRow("Developer", APP_MAKER);
         NS_InfoRow("Telegram", APP_CHANNEL);
         NS_InfoRow("Game", "Blood Strike");
-    }
-
-    else if (activeTab == 5) {
-        NS_Header("Memory Features");
-
-        ImVec2 warnPos = ImGui::GetCursorScreenPos();
-        dl->AddRectFilled(warnPos, ImVec2(warnPos.x + cw, warnPos.y + 36), IM_COL32(255, 80, 80, 40), 4.f);
-        dl->AddText(ImGui::GetFont(), 15.f, ImVec2(warnPos.x + 10, warnPos.y + 8), C_Danger(), "⚠ HIGH RISK");
-        dl->AddText(ImGui::GetFont(), 13.f, ImVec2(warnPos.x + 10, warnPos.y + 24), C_TextDim(), "Direct memory modification. Use at your own risk!");
-        ImGui::Dummy(ImVec2(0, 48));
-
-        NS_Header("Player Mods");
-        ImGui::Columns(2, "player_cols", false);
-        ImGui::SetColumnWidth(0, colW);
-        needSync |= NS_Toggle("player_god", "God Mode", &sync_bool["bGodMode"]);
-        needSync |= NS_Toggle("player_antiknock", "Anti Knock", &sync_bool["bAntiKnock"]);
-        needSync |= NS_Toggle("player_execrange", "Execute Range Hack", &sync_bool["bExecuteRangeHack"]);
-        if (sync_bool["bExecuteRangeHack"]) {
-            needSync |= NS_Slider("player_execrange_dist", "Execute Range", &sync_float["fExecuteRange"], 1.5f, 30.0f, "m");
-        }
-        needSync |= NS_Toggle("player_fly", "Fly / Terbang", &sync_bool["bFly"]);
-        needSync |= NS_Toggle("player_teleport", "Teleport", &sync_bool["bTeleport"]);
-        needSync |= NS_Toggle("player_nocooldown", "No Cooldown Skill", &sync_bool["bNoCooldown"]);
-        needSync |= NS_Toggle("player_superjump", "Super Jump", &sync_bool["bSuperJump"]);
-        needSync |= NS_Toggle("player_speed", "Speed Hack", &sync_bool["bSpeedHack"]);
-        ImGui::NextColumn();
-        needSync |= NS_Toggle("player_nogravity", "No Gravity", &sync_bool["bNoGravity"]);
-        needSync |= NS_Toggle("player_nofalldamage", "No Fall Damage", &sync_bool["bNoFallDamage"]);
-        needSync |= NS_Toggle("player_infinitestamina", "Infinite Stamina", &sync_bool["bInfiniteStamina"]);
-        needSync |= NS_Toggle("player_waterwalk", "Water Walk", &sync_bool["bWaterWalk"]);
-        needSync |= NS_Toggle("player_anstuck", "Air Stuck", &sync_bool["bAirStuck"]);
-        ImGui::Columns(1);
-
-        NS_Header("Player Sliders");
-        ImGui::Columns(2, "player_sliders", false);
-        ImGui::SetColumnWidth(0, colW);
-        needSync |= NS_Slider("player_flyheight", "Fly Height", &sync_float["fFlyHeight"], 5.0f, 200.0f, "m");
-        needSync |= NS_Slider("player_jumpmult", "Jump Multiplier", &sync_float["fJumpMult"], 1.0f, 5.0f, "x");
-        needSync |= NS_Slider("player_speedmult", "Speed Multiplier", &sync_float["fSpeedMult"], 1.0f, 5.0f, "x");
-        ImGui::NextColumn();
-        needSync |= NS_Slider("player_teleportx", "Teleport X", &sync_float["fTeleportX"], -500.0f, 500.0f, "");
-        needSync |= NS_Slider("player_teleporty", "Teleport Y", &sync_float["fTeleportY"], -500.0f, 500.0f, "");
-        needSync |= NS_Slider("player_teleportz", "Teleport Z", &sync_float["fTeleportZ"], -500.0f, 500.0f, "");
-        needSync |= NS_Slider("player_anstuckheight", "Air Stuck Height", &sync_float["fAirStuckHeight"], 5.0f, 200.0f, "m");
-        ImGui::Columns(1);
     }
 
     ImGui::EndChild();
