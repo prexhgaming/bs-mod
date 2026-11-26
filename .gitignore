@@ -29,6 +29,13 @@ local.properties
 
 # Local scratch scripts
 /tmp/
+__pycache__/
+*.pyc
+
+# The game library is 80 MB and is only needed locally to run find_pyrun.py;
+# never commit it (GitHub rejects files over 50 MB).
+/libGame.so
+*.so.txt
 
 # Uploaded game splits / local APKs (large, not project source)
 *.apk

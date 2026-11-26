@@ -30,7 +30,6 @@ return strstr(buf,"newspikeme") ? "com.netease.newspikeme" : "com.netease.newspi
 #include "KittyMemory/MemoryPatch.h"
 #include "KittyMemory/KittyScanner.h"
 #include "KittyMemory/KittyUtils.h"
-#include "include/hpp/pyscan.h"
 #include "xhook/xhook.h"
 #include "include/hpp/srcpy.h"
 #include "NetworkBlocker.hpp"
@@ -99,8 +98,8 @@ static int my_connect(int sockfd, const struct sockaddr* addr, socklen_t addrlen
 static bool (*_hook_bypass)(void*) = nullptr;
 static bool hook_bypass(void*) { return false; }
 
-// Verified against the shipped libGame.so: PyRun_StringFlags lives at 0x024dbcf0
-// (Thumb, 0x64 bytes). Set back to 0 to fall back to the runtime scan.
+// PyRun_StringFlags in libGame.so, found by find_pyrun.py (see that script for
+// the method). Re-run it and change this number when the game updates.
 static constexpr uintptr_t kNexoraPyRunOffset = 0x024dbcf0;
 
 // ---- Python injection: probe first, then load once the framework answers ----
@@ -192,33 +191,17 @@ DEFINES(void*, iMissMyWife, const char* v0, int v1, void* v2, void* v3, void* v4
     return _iMissMyWife(v0, v1, v2, v3, v4);
 }
 
-// Runs off the render path: the scan walks the whole .text of libGame.so, which
-// must not hold up the overlay. The game keeps running scripts, so hooking a
-// second late still catches every later call.
+// Hooks PyRun_StringFlags at the offset pinned above. Kept on its own thread so
+// nothing here can delay the overlay; the game keeps running scripts, so hooking
+// a moment late still catches every later call.
 static void* py_hook_thread(void* arg) {
     const uintptr_t libGameBase = (uintptr_t)arg;
+    const uintptr_t pyRun = libGameBase + kNexoraPyRunOffset;
 
-    // A verified offset beats the scan: it is instant, and the two scan strategies
-    // do not work on this build (nothing in .text references the "<string>"
-    // literal directly -- it is reached through a GOT slot for _PyRuntime -- and
-    // the 257 call-site vote is too scattered to converge). The scan stays as the
-    // fallback for a build without a known offset.
-    uintptr_t pyRun = 0;
-    if (kNexoraPyRunOffset != 0) {
-        pyRun = libGameBase + kNexoraPyRunOffset;
-        NX_LOGI("using PyRun_StringFlags offset +0x%llx -> %p",
-                (unsigned long long)kNexoraPyRunOffset, (void*)pyRun);
-    } else {
-        pyRun = nx::findPyRunStringFlags("libGame.so");
-    }
-    if (pyRun) {
-        HOOKI(pyRun, iMissMyWife);
-        AddNotification("PY HOOK OK", 140, 220, 120, 2.f);
-    } else {
-        // Never hook a guess: entering an arbitrary function with the PyRun
-        // signature is a guaranteed crash. Report and keep the rest working.
-        AddNotification("PY HOOK NOT FOUND", 230, 90, 90, 3.f);
-    }
+    NX_LOGI("hooking PyRun_StringFlags at %p (base %p + 0x%llx)",
+            (void*)pyRun, (void*)libGameBase, (unsigned long long)kNexoraPyRunOffset);
+    HOOKI(pyRun, iMissMyWife);
+    AddNotification("PY HOOK OK", 140, 220, 120, 2.f);
     return nullptr;
 }
 
@@ -259,7 +242,7 @@ void* bypass_thread(void*) {
     nexora_mkdir_recursive(_pkg_dir);
 
     SkinInfoSync::Init();
-    NetworkBlocker::initialize();
+   // NetworkBlocker::initialize();
     
     xhook_register(".*\\.so$", "getaddrinfo", (void*)NetworkBlocker::getaddrinfo_hooked, (void**)&orig_getaddrinfo);
     xhook_register(".*\\.so$", "gethostbyname", (void*)NetworkBlocker::gethostbyname_hooked, (void**)&orig_getaddrinfo);

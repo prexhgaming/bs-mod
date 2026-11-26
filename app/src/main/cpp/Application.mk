@@ -34,7 +34,6 @@ APP_CPPFLAGS  += -D__BIONIC_NO_PAGE_SIZE_MACRO
 APP_CFLAGS    += -D__BIONIC_NO_PAGE_SIZE_MACRO
 
 # ==================== 32-BIT TARGET ====================
-# Only armeabi-v7a is built (see Application.mk for the reasoning): the game is a
-# 32-bit library and a 64-bit process cannot load it. pyscan.h handles the
-# Thumb-2 decoding for this ABI; the A64 path is kept for a future 64-bit build.
-# If arm64-v8a is re-enabled, restore it in APP_ABI as well.
+# Only armeabi-v7a is built: the game is a 32-bit library and a 64-bit process
+# cannot load it. If arm64-v8a is ever re-enabled, restore it in APP_ABI as well
+# as in app/build.gradle's abiFilters.
