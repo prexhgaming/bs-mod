@@ -19,6 +19,8 @@ class App : Application() {
 
     companion object {
 
+        private const val TAG = "App"
+
         @SuppressLint("StaticFieldLeak")
         @Volatile
         private lateinit var mContext: Context
@@ -71,7 +73,4 @@ class App : Application() {
         }
     }
 
-    private companion object {
-        const val TAG = "App"
-    }
 }
