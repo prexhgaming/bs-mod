@@ -51,7 +51,9 @@
 - Removed by this swap — do not resurrect: the Python SDK dumper (`sdk_dumper.cpp`, `py_runtime_dump.cpp`, `native_utils.cpp`, `third_party/`, `util/PySdkDumper.kt`) and its More-menu toggle (`action_dump_sdk`). `uploads/` (reference material, e.g. `src.zip`) and `tmp/` (scratch rigs) are gitignored.
 
 ## Toolchain
-- Gradle wrapper 8.7, AGP 8.5.2, Kotlin 1.9.23, JDK 17, `compileSdk 35`, `targetSdk 34`, `minSdk 21`, `ndkVersion 29.0.13846066`, ABI `armeabi-v7a` (32-bit only — see the mod-menu section).
+- Gradle wrapper 8.13, AGP 8.13.2, Kotlin 1.9.23, JDK 17, `compileSdk 35`, `targetSdk 28`, `minSdk 21`, `ndkVersion 29.0.13846066`, ABI `armeabi-v7a` (32-bit only — see the mod-menu section).
+- **The wrapper version and AGP must move together**: AGP 8.13 refuses to apply on Gradle < 8.13 (`Minimum supported Gradle version is 8.13`). Bumping `agp` in `gradle/libs.versions.toml` without bumping `distributionUrl` in `gradle/wrapper/gradle-wrapper.properties` fails at configuration time, before any compilation.
+- **Java target must stay 17**: CI installs JDK 17, so `compileOptions { VERSION_21 }` in any module fails with `invalid target release: 21`. `app` and `Bcore` are both on 17 to match. If Java 21 is ever needed, bump `java-version` in `.github/workflows/release-apk.yml` first.
 - `compileSdk`/`targetSdk`/`minSdk` live in root `build.gradle` (`ext.*`). `compileSdk 37` fails — the CI runner has no `platforms;android-37`.
 
 ## Building — NOT possible in this sandbox

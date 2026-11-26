@@ -38,9 +38,13 @@ android {
         ndkVersion = "29.0.13846066"
     }
 
+    // Java 17 to match the other modules and the CI toolchain (JDK 17 in
+    // release-apk.yml). javac 17 cannot emit `-target 21`, so VERSION_21 here
+    // failed with "invalid target release: 21" before anything else compiled.
+    // Nothing in Bcore uses a Java 21-only API or syntax, so 17 loses nothing.
     compileOptions {
-        sourceCompatibility JavaVersion.VERSION_21
-        targetCompatibility JavaVersion.VERSION_21
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
     }
     
     
