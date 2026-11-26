@@ -559,6 +559,29 @@ public class IConnectivityManagerProxy extends BinderInvocationStub {
         }
     }
 
+    /**
+     * GMS drives its connectivity state machine through network callbacks
+     * (com.google.android.gms.gcm.connection.ConnectivityManagerVariantImplAsync),
+     * and ConnectivityManager.registerNetworkCallback() ends up here.
+     *
+     * The real ConnectivityService checks that the callingPackage argument belongs
+     * to the caller's uid. Inside the sandbox the caller *is* the host uid while the
+     * argument says com.google.android.gms, which that uid does not own, so the call
+     * throws "SecurityException: Package com.google.android.gms does not belong to
+     * <uid>" and GMS never learns whether the network is up.
+     *
+     * Rewriting the package argument to the host package is what the rest of these
+     * proxies already do; listenForNetwork simply was never hooked.
+     */
+    @ProxyMethod("listenForNetwork")
+    public static class ListenForNetwork extends MethodHook {
+        @Override
+        protected Object hook(Object who, Method method, Object[] args) throws Throwable {
+            MethodParameterUtils.replaceFirstAppPkg(args);
+            return method.invoke(who, args);
+        }
+    }
+
     
     @ProxyMethod("registerNetworkCallback")
     public static class RegisterNetworkCallback extends MethodHook {

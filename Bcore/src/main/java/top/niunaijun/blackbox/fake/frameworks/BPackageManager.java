@@ -8,7 +8,6 @@ import android.content.pm.PackageInfo;
 import android.content.pm.ProviderInfo;
 import android.content.pm.ResolveInfo;
 import android.content.pm.ServiceInfo;
-import android.content.pm.Signature;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.RemoteException;
@@ -853,7 +852,10 @@ public class BPackageManager extends BlackManager<IBPackageManagerService> {
         info.installLocation = 0; 
         info.gids = new int[]{}; 
         info.splitNames = new String[]{}; 
-        info.signatures = new Signature[]{}; 
+        // Deliberately left null. An empty Signature[] is not "no signatures" to
+        // GoogleSignatureVerifier (it needs length == 1, so both fail) but it is
+        // strictly worse: callers that do signatures[0] get an
+        // ArrayIndexOutOfBoundsException instead of a clean verification failure.
         return info;
     }
 }

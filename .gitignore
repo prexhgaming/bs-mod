@@ -50,3 +50,6 @@ split_config.*.apk
 # Reference dumps from other tools (huge, read-only material)
 levi_sdk_dump.txt
 uploads/
+
+# Device logcat captures pasted in for debugging
+*_logcat*.txt

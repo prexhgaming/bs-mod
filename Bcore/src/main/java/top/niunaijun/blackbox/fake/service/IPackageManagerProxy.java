@@ -1,7 +1,6 @@
 package top.niunaijun.blackbox.fake.service;
 
 import android.content.ComponentName;
-import android.content.Context;
 import android.content.Intent;
 import android.content.pm.ActivityInfo;
 import android.content.pm.ApplicationInfo;
@@ -344,13 +343,24 @@ public class IPackageManagerProxy extends BinderInvocationStub {
             
             if ("com.android.vending".equals(packageName)) {
                 PackageInfo fake = createFakeGooglePlayServicesPackageInfo();
-                // Privacy-first (OG): by default keep Play Store fully fake.
-                // If needed for compatibility, allow an explicit opt-in fallback.
-                if (shouldAttachSigningInfo(flags) && isHostSigningFallbackEnabled()) {
-                    PackageInfo real = tryGetRealHostPackageInfo(who, method, args);
-                    if (real != null) {
-                        attachSigningInfo(fake, real);
-                    }
+                // The signatures are not cosmetic: GoogleSignatureVerifier logs
+                // "package info is not set correctly" and rejects any PackageInfo
+                // whose signatures are null or whose length != 1, and everything
+                // downstream follows from that one failure — GooglePlayServicesUtil
+                // reports an invalid Play Store signature, DynamiteModule disables
+                // remote loading ("Invalid GmsCore APK") and GoogleApiManager turns
+                // every service into SERVICE_INVALID.
+                //
+                // A fabricated certificate can never match Google's, so the only
+                // thing that works is borrowing the real one from the host package.
+                // This used to sit behind an opt-in "host_signing_fallback" pref that
+                // defaults to false, which meant GMS could never work out of the box.
+                PackageInfo real = tryGetRealHostPackageInfoWithSignatures(who, method, args);
+                if (real != null) {
+                    attachSigningInfo(fake, real);
+                } else {
+                    Slog.w(TAG, "GetPackageInfo: no host " + packageName
+                            + " available to borrow signatures from");
                 }
                 return fake;
             }
@@ -367,6 +377,17 @@ public class IPackageManagerProxy extends BinderInvocationStub {
                                 || perm.equals(android.Manifest.permission.CAPTURE_AUDIO_OUTPUT))) {
                             packageInfo.requestedPermissionsFlags[i] |= PackageInfo.REQUESTED_PERMISSION_GRANTED;
                         }
+                    }
+                }
+                // GMS verifies its own signature on several paths (DynamiteModule
+                // before enabling remote loading, GoogleApiManager before handing out
+                // a service). When the sandbox copy came back without certificates,
+                // borrow the host's real ones instead of failing verification.
+                if (shouldAttachSigningInfo(flags) && isGooglePackage(packageName)
+                        && (packageInfo.signatures == null || packageInfo.signatures.length == 0)) {
+                    PackageInfo real = tryGetRealHostPackageInfoWithSignatures(who, method, args);
+                    if (real != null) {
+                        attachSigningInfo(packageInfo, real);
                     }
                 }
                 return packageInfo;
@@ -386,26 +407,38 @@ public class IPackageManagerProxy extends BinderInvocationStub {
             return (flags & (GET_SIGNATURES | GET_SIGNING_CERTIFICATES)) != 0;
         }
 
-        private boolean isHostSigningFallbackEnabled() {
-            try {
-                Context context = BlackBoxCore.getContext();
-                if (context == null) {
-                    return false;
-                }
-                String prefsName = context.getPackageName() + "_preferences";
-                return context.getSharedPreferences(prefsName, Context.MODE_PRIVATE)
-                        .getBoolean("host_signing_fallback", false);
-            } catch (Throwable ignored) {
+        private boolean isGooglePackage(String packageName) {
+            if (packageName == null) {
+                return false;
             }
-            return false;
+            return "com.google.android.gms".equals(packageName)
+                    || "com.google.android.gsf".equals(packageName)
+                    || "com.android.vending".equals(packageName)
+                    || packageName.startsWith("com.google.android.");
         }
 
-        private PackageInfo tryGetRealHostPackageInfo(Object who, Method method, Object[] args) {
+        /**
+         * Reads the host's real PackageInfo, forcing the flags that actually make
+         * PackageManager fill in certificates.
+         *
+         * This is the part the old code got wrong: it reused the caller's flags, and
+         * a request with flags = 0 carries no signatures at all, so
+         * attachSigningInfo() had nothing to copy and the fake Play Store stayed
+         * unsigned.
+         */
+        private PackageInfo tryGetRealHostPackageInfoWithSignatures(Object who, Method method, Object[] args) {
             try {
                 Object[] argsCopy = args != null ? args.clone() : null;
-                if (argsCopy == null) {
+                if (argsCopy == null || argsCopy.length < 2) {
                     return null;
                 }
+                // GET_SIGNATURES is deprecated but still what most verifiers read;
+                // GET_SIGNING_CERTIFICATES is the modern replacement (API 28+).
+                int flags = 0x00000040;
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                    flags |= 0x08000000;
+                }
+                argsCopy[1] = flags;
                 MethodParameterUtils.replaceUserIdIfNeeded(argsCopy, argsCopy.length - 1);
                 Object out = method.invoke(who, argsCopy);
                 return (out instanceof PackageInfo) ? (PackageInfo) out : null;
