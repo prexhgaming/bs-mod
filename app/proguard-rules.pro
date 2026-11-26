@@ -91,6 +91,10 @@
 -keep class top.niunaijun.blackboxa.app.App { *; }
 # Crash viewer is started by an explicit Intent and lives in its own process.
 -keep class top.niunaijun.blackboxa.crash.** { *; }
+# ViewBinding: the inflate(...) factories are invoked reflectively by the
+# `inflate()` delegate in util/ViewBindingEx.kt, so R8 must not remove or rename
+# them. Without this every screen fails with NoSuchMethodException.
+-keep class top.niunaijun.blackboxa.databinding.** { *; }
 
 # ----------------------------------------------------------------------------
 # Libraries that rely on reflection / generics

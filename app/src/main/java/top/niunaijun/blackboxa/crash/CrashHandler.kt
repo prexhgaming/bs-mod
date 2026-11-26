@@ -69,7 +69,7 @@ object CrashHandler {
                 // Our own screen is coming up; the platform dialog would only be
                 // a second, less useful UI on top of it.
                 die()
-            } else if (previous != null && previous !== this) {
+            } else if (previous != null) {
                 previous.uncaughtException(thread, error)
             } else {
                 die()
