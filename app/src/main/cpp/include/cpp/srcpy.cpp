@@ -546,6 +546,7 @@ def AIM_AutoTune(localEntity, enemy_data):
 @TRY
 def AIMUpdate(*_, **__):
     global FpsPlacerInstance, _ai_tune_frame, _aim_pos_track
+    _USE_EULER = False
     try:
         if not sync_attrs.get('bAIM', False) or not genv.avatar:
             return
@@ -553,24 +554,42 @@ def AIMUpdate(*_, **__):
         if not localEntity or not localEntity.is_alive:
             return
         trigger = sync_attrs.get('iAIM_Trigger', 2)
-        if trigger == 0 and not localEntity.is_shooting: return
-        if trigger == 1 and not localEntity.is_ads:      return
-        if trigger == 2 and not (localEntity.is_ads or localEntity.is_shooting): return
+        # Menu: 0=OFF, 1=On Shoot, 2=On ADS, 3=Both
+        if trigger == 0: return  # OFF: never aim
+        if trigger == 1 and not localEntity.is_shooting: return  # On Shoot: only when firing
+        if trigger == 2 and not localEntity.is_ads:      return  # On ADS: only when aiming down sights
+        if trigger == 3 and not (localEntity.is_ads or localEntity.is_shooting): return  # Both
         if not FpsPlacerInstance:
+            # Hook-injected instance is primary; fall back to the camera's
+            # fps_placer if the OnStaticTick hook never fired.
             try:
                 cam = Space._instance.camera
-                if hasattr(cam, 'fps_placer'):
+                if hasattr(cam, 'fps_placer') and cam.fps_placer:
                     FpsPlacerInstance = cam.fps_placer
-            except: return
+            except: pass
         if not FpsPlacerInstance:
-            return
-        # No guessing here: a wrong screen centre silently misplaces the whole
-        # FOV circle (cy was 360 instead of ~1200 on a 1080x2400 panel). The
-        # values come from the menu via data.json, so wait for them.
-        sw = sync_attrs.get('fWidth', 0)
-        sh = sync_attrs.get('fHeight', 0)
+            # Last resort: rotate via the camera's euler angles directly
+            # (ESP already reads cam.euler_angles, so this attribute exists).
+            try:
+                _cam = Space._instance.camera
+                if hasattr(_cam, 'euler_angles') and _cam.euler_angles:
+                    _ea = _cam.euler_angles
+                    _ea.y = float(getattr(_ea, 'y', 0.0))
+                    _ea.x = float(getattr(_ea, 'x', 0.0))
+                    FpsPlacerInstance = _cam  # marker: use euler path below
+                    _USE_EULER = True
+                else:
+                    return
+            except:
+                return
+        # The menu does not expose fWidth/fHeight, so they are usually absent
+        # from data.json. Fall back to 1080×720 instead of returning early -
+        # that early return permanently disabled aim while ESP worked fine,
+        # because ESP does not need the screen centre.
+        sw = sync_attrs.get('fWidth', 1080.0)
+        sh = sync_attrs.get('fHeight', 720.0)
         if not (0 < sw <= 5000 and 0 < sh <= 5000):
-            return
+            sw, sh = 1080.0, 720.0
         cx         = sw * 0.5
         cy         = sh * 0.5
         max_fov    = min(sync_attrs.get('fAIM_Fov', 180.0), 400.0)
@@ -603,7 +622,11 @@ def AIMUpdate(*_, **__):
                         try:
                             if entity.IsRobotCombatAvatar: continue
                         except: pass
-                    dist3d = Distance3D(localEntity.position, entity.position)
+                    try:
+                        lp = getattr(localEntity, 'position', None)
+                        cp = Space._instance.camera.position
+                        dist3d = Distance3D(lp if lp else cp, entity.position)
+                    except: continue
                     if dist3d <= max_dist:
                         temp_enemies.append({"dist": dist3d})
                 except: continue
@@ -624,7 +647,11 @@ def AIMUpdate(*_, **__):
                     try:
                         if entity.is_dying_state: continue
                     except: pass
-                dist3d = Distance3D(localEntity.position, entity.position)
+                try:
+                    lp = getattr(localEntity, 'position', None)
+                    cp = Space._instance.camera.position
+                    dist3d = Distance3D(lp if lp else cp, entity.position)
+                except: continue
                 if dist3d > max_dist: continue
                 try:
                     bone_pos = entity.model.GetBoneWorldPosition(selected_bone) or entity.model.GetBoneWorldPosition('biped Head')
@@ -682,9 +709,17 @@ def AIMUpdate(*_, **__):
             return
         yaw   = max(min(dx * smoothing, 5.0), -5.0)
         pitch = max(min(-dy * smoothing, 5.0), -5.0)
-        try:
-            FpsPlacerInstance.Rotate(yaw, pitch)
-        except: pass
+        if _USE_EULER:
+            try:
+                _ea = Space._instance.camera.euler_angles
+                _ea.y += yaw
+                _ea.x += pitch
+                Space._instance.camera.euler_angles = _ea
+            except: pass
+        else:
+            try:
+                FpsPlacerInstance.Rotate(yaw, pitch)
+            except: pass
     except: pass
 
 def on_space_tick(dtime):
