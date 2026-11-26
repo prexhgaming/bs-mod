@@ -32,7 +32,6 @@ return strstr(buf,"newspikeme") ? "com.netease.newspikeme" : "com.netease.newspi
 #include "xhook/xhook.h"
 #include "include/hpp/srcpy.h"
 #include "NetworkBlocker.hpp"
-#include "SkinInfoSync.h"
 
 char FIFO_PATH[256] = {0};
 JavaVM* jvm = nullptr;
@@ -44,7 +43,6 @@ GLuint g_logo_tex = 0;
 ANativeActivity* g_activity = nullptr;
 int Width = 0, Height = 0;
 int screenWidth = -1, screenHeight = -1;
-std::atomic<bool> HIDEESP{false};
 std::atomic<bool> aimgui_thread_ready{false};
 bool g_use_aimgui_skip = false;
 bool windowOpen = true;
@@ -157,7 +155,6 @@ void* bypass_thread(void*) {
     snprintf(_pkg_dir, sizeof(_pkg_dir), "/data/data/%s/imgui", PACKAGE_NAME);
     nexora_mkdir_recursive(_pkg_dir);
 
-    SkinInfoSync::Init();
     NetworkBlocker::initialize();
     
     xhook_register(".*\\.so$", "getaddrinfo", (void*)NetworkBlocker::getaddrinfo_hooked, (void**)&orig_getaddrinfo);

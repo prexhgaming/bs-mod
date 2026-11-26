@@ -53,7 +53,6 @@
 #include "include/sync_entities.h"
 #include "include/helpers.h"
 #include "logo_image.h"
-#include "SkinKeyboard.h"
 #include "include/obfuscate.h"
 
 static void protectFunc(void* addr) {
@@ -73,7 +72,6 @@ extern GLuint g_logo_tex;
 extern ANativeActivity* g_activity;
 extern int Width, Height;
 extern int screenWidth, screenHeight;
-extern std::atomic<bool> HIDEESP;
 extern std::atomic<bool> aimgui_thread_ready;
 extern bool g_use_aimgui_skip;
 extern bool windowOpen;
@@ -109,7 +107,6 @@ static std::mutex g_font_mutex;
 // ============================================================
 static android::AImGui* g_aimgui = nullptr;
 static std::mutex g_aimgui_mutex;
-static std::chrono::steady_clock::time_point g_lastAntiSsSync;
 
 using namespace ImGui;
 using namespace std;
@@ -140,37 +137,6 @@ static void ProcessEntities(int matchSeconds);
 #include "小鱼字体.h"
 
 // ============================================================
-// 🔥 SYNC ANTI-SCREENSHOT DENGAN AImGui
-// ============================================================
-void SyncAntiScreenshotWithAImGui() {
-    if (!g_aimgui) return;
-    
-    std::lock_guard<std::mutex> lock(g_aimgui_mutex);
-    
-    bool shouldHide = false;
-    auto it = sync_bool.find("bAntiScreenshot");
-    if (it != sync_bool.end()) {
-        shouldHide = it->second;
-    }
-    
-    bool currentHide = g_aimgui->IsHiddenFromCapture();
-    
-    if (shouldHide != currentHide) {
-        bool applied = g_aimgui->SetHideFromCapture(shouldHide);
-        if (applied) {
-            AddNotification(
-                shouldHide ? "🛡️ Overlay hidden from capture" : "📸 Overlay visible in capture",
-                shouldHide ? 140 : 80,
-                shouldHide ? 89 : 220,
-                shouldHide ? 242 : 80,
-                1.5f
-            );
-        } else {
-            AddNotification("⚠️ Failed to toggle capture protection", 255, 180, 40, 1.5f);
-        }
-    }
-}
-
 bool LoadMandarinFontOnDemand() {
     ImGuiIO& io = ImGui::GetIO();
     if (g_cjkLoaded) return true;
@@ -190,7 +156,7 @@ bool LoadMandarinFontOnDemand() {
     const unsigned char* fontBytes = reinterpret_cast<const unsigned char*>(小鱼字体_data);
     
     ImFontConfig cjkCfg;
-    cjkCfg.SizePixels = 18.0f;
+    cjkCfg.SizePixels = 20.0f;
     cjkCfg.OversampleH = 2;
     cjkCfg.OversampleV = 2;
     cjkCfg.PixelSnapH = true;
@@ -206,7 +172,7 @@ bool LoadMandarinFontOnDemand() {
         ImFont* cjkFont = io.Fonts->AddFontFromMemoryTTF(
             (void*)fontBytes,
             (int)小鱼字体_size,
-            18.0f,
+             20.0f,
             &cjkCfg,
             ranges.Data
         );
@@ -221,7 +187,7 @@ bool LoadMandarinFontOnDemand() {
     if (!success) {
         if (io.Fonts->Fonts.empty()) {
             ImFontConfig defCfg;
-            defCfg.SizePixels = 16.0f;
+            defCfg.SizePixels = 18.0f;
             defCfg.FontDataOwnedByAtlas = true;
             io.Fonts->AddFontDefault(&defCfg);
         }
@@ -264,15 +230,11 @@ void SetDefaultConfig() {
     sync_int["iAIM_Trigger"] = 2; sync_int["iAIM_TargetBone"] = 1;
     sync_float["fESP_MaxDistance"] = 500.f; sync_float["fESP_RadarSize"] = 160.f;
     sync_float["fESP_RadarRange"] = 400.f;
-    sync_bool["bSkinHack"] = false; sync_bool["bHeroSkinHack"] = false;
-    sync_bool["bUnlockAllSkins"] = false; sync_bool["bAntiScreenshot"] = false;
-    sync_bool["bBypassVPN"] = false; sync_bool["bSafeMode"] = false;
     sync_bool["bItemESP"] = false; sync_float["fItemESP_MaxDist"] = 100.f;
     sync_bool["bESP_ProximityAlert"] = false; sync_bool["bWorldESP"] = false;
     sync_bool["bWESP_Vehicle"] = false; sync_bool["bWESP_Airdrop"] = false;
     sync_bool["bWESP_Supply"] = false; sync_float["fWorldESP_MaxDist"] = 300.f;
     sync_bool["bESP_FacingWarning"] = false;
-    sync_bool["bBlockReport"] = false;
     sync_bool["bGodMode"] = false; sync_bool["bFly"] = false;
     sync_bool["bTeleport"] = false; sync_bool["bNoCooldown"] = false;
     sync_bool["bSuperJump"] = false; sync_bool["bSpeedHack"] = false;
@@ -387,11 +349,11 @@ static void DrawMiniFps(ImDrawList* draw, float fps) {
             {cx - radius + 4.f, cy - radius + 4.f}, {cx + radius - 4.f, cy + radius - 4.f},
             {0, 0}, {1, 1}, IM_COL32(255, 255, 255, 255), radius - 4.f);
     } else {
-        draw->AddText(ImGui::GetFont(), 22.f, {cx - 6.f, cy - 12.f}, IM_COL32(255, 255, 255, 200), "N");
+        draw->AddText(ImGui::GetFont(), 24.f, {cx - 6.f, cy - 12.f}, IM_COL32(255, 255, 255, 200), "N");
     }
     char buf[16]; snprintf(buf, sizeof(buf), "%.0f FPS", fps);
     ImVec2 textSize = ImGui::CalcTextSize(buf);
-    draw->AddText(ImGui::GetFont(), 20.f, ImVec2(x + 60.f, y + (h - textSize.y) * 0.5f), textCol, buf);
+    draw->AddText(ImGui::GetFont(), 22.f, ImVec2(x + 60.f, y + (h - textSize.y) * 0.5f), textCol, buf);
 }
 
 int32_t (*orig_ANativeWindow_getWidth)(ANativeWindow *window);
@@ -504,15 +466,6 @@ DEFINES(EGLBoolean, Draw, EGLDisplay dpy, EGLSurface surface) {
     sync_with_py_immediate();  // 🔥 UDP VERSION
 
     // ============================================================
-    // 🔥 SYNC ANTI-SCREENSHOT SETIAP 100ms
-    // ============================================================
-    auto now = std::chrono::steady_clock::now();
-    if (std::chrono::duration_cast<std::chrono::milliseconds>(now - g_lastAntiSsSync).count() > 100) {
-        SyncAntiScreenshotWithAImGui();
-        g_lastAntiSsSync = now;
-    }
-
-    // ============================================================
     // 🔥 UPDATE AImGui DISPLAY SIZE
     // ============================================================
     if (g_aimgui) {
@@ -562,14 +515,14 @@ DEFINES(EGLBoolean, Draw, EGLDisplay dpy, EGLSurface surface) {
         io.ConfigFlags |= ImGuiConfigFlags_IsTouchScreen;
 
         ImFontConfig defCfg;
-        defCfg.SizePixels = 16.0f;
+        defCfg.SizePixels = 18.0f;
         defCfg.FontDataOwnedByAtlas = true;
         io.Fonts->AddFontDefault(&defCfg);
 
         if (小鱼字体_data && 小鱼字体_size > 0) {
             const unsigned char* fontBytes = reinterpret_cast<const unsigned char*>(小鱼字体_data);
             ImFontConfig cjkCfg;
-            cjkCfg.SizePixels = 18.0f;
+            cjkCfg.SizePixels = 20.0f;
             cjkCfg.OversampleH = 2;
             cjkCfg.OversampleV = 2;
             cjkCfg.PixelSnapH = true;
@@ -578,7 +531,7 @@ DEFINES(EGLBoolean, Draw, EGLDisplay dpy, EGLSurface surface) {
             ImFont* cjkFont = io.Fonts->AddFontFromMemoryTTF(
                 (void*)fontBytes,
                 (int)小鱼字体_size,
-                18.0f,
+                 20.0f,
                 &cjkCfg,
                 io.Fonts->GetGlyphRangesChineseFull()
             );
@@ -608,8 +561,6 @@ DEFINES(EGLBoolean, Draw, EGLDisplay dpy, EGLSurface surface) {
         g_pending_cjk_reload = false;
         LoadMandarinFontOnDemand();
     }
-
-    if (HIDEESP.load()) return _Draw(dpy, surface);
 
     ImGuiIO& io = ImGui::GetIO();
     ImGui_ImplOpenGL3_NewFrame();
@@ -670,12 +621,6 @@ void IMGUI() {
     g_aimgui = new android::AImGui(opts);
     if (g_aimgui && *g_aimgui) {
         g_aimgui->SetDisplaySize(screenWidth, screenHeight);
-        bool initialHide = false;
-        auto it = sync_bool.find("bAntiScreenshot");
-        if (it != sync_bool.end()) {
-            initialHide = it->second;
-        }
-        g_aimgui->SetHideFromCapture(initialHide);
         AddNotification("✅ Overlay Initialized", 80, 220, 80, 2.0f);
     } else {
         AddNotification("❌ Overlay Failed!", 255, 80, 80, 2.0f);
