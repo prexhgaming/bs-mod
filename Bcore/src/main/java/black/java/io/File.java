@@ -1,8 +1,8 @@
 package black.java.io;
 
 
-import top.niunaijun.blackreflection.annotation.BClassName;
-import top.niunaijun.blackreflection.annotation.BStaticField;
+import zyn.bs.core.reflection.annotation.BClassName;
+import zyn.bs.core.reflection.annotation.BStaticField;
 
 @BClassName("java.io.File")
 public interface File {

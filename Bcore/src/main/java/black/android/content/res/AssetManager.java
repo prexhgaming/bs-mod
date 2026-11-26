@@ -3,9 +3,9 @@ package black.android.content.res;
 import android.content.res.Configuration;
 import android.util.DisplayMetrics;
 
-import top.niunaijun.blackreflection.annotation.BClassName;
-import top.niunaijun.blackreflection.annotation.BConstructor;
-import top.niunaijun.blackreflection.annotation.BMethod;
+import zyn.bs.core.reflection.annotation.BClassName;
+import zyn.bs.core.reflection.annotation.BConstructor;
+import zyn.bs.core.reflection.annotation.BMethod;
 
 @BClassName("android.content.res.AssetManager")
 public interface AssetManager {

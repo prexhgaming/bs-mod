@@ -1,7 +1,7 @@
 package black.android.content;
 
 
-import top.niunaijun.blackreflection.annotation.BClassName;
+import zyn.bs.core.reflection.annotation.BClassName;
 
 @BClassName("android.content.IClipboard")
 public interface IClipboard {

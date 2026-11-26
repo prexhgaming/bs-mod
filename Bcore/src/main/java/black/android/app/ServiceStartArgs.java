@@ -2,9 +2,9 @@ package black.android.app;
 
 import android.content.Intent;
 
-import top.niunaijun.blackreflection.annotation.BClassName;
-import top.niunaijun.blackreflection.annotation.BConstructor;
-import top.niunaijun.blackreflection.annotation.BField;
+import zyn.bs.core.reflection.annotation.BClassName;
+import zyn.bs.core.reflection.annotation.BConstructor;
+import zyn.bs.core.reflection.annotation.BField;
 
 @BClassName("android.app.ServiceStartArgs")
 public interface ServiceStartArgs {

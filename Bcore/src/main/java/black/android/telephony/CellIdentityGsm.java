@@ -1,9 +1,9 @@
 package black.android.telephony;
 
 
-import top.niunaijun.blackreflection.annotation.BClassName;
-import top.niunaijun.blackreflection.annotation.BConstructor;
-import top.niunaijun.blackreflection.annotation.BField;
+import zyn.bs.core.reflection.annotation.BClassName;
+import zyn.bs.core.reflection.annotation.BConstructor;
+import zyn.bs.core.reflection.annotation.BField;
 
 @BClassName("android.telephony.CellIdentityGsm")
 public interface CellIdentityGsm {

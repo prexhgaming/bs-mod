@@ -7,8 +7,8 @@
 
 ## Modules
 
-- `:app` — Kotlin UI (`top.niunaijun.blackboxa`). Launcher activity = `.view.game.GameActivity`, `Application` = `.app.App`.
-- `:Bcore` — engine: Java (`top.niunaijun.blackbox.BlackBoxCore`), AIDL (`Bcore/src/main/aidl`), native C++ (`Bcore/src/main/cpp`). No prebuilt `.so` — compiled from source by the NDK.
+- `:app` — Kotlin UI (`zyn.bs`). Launcher activity = `.view.game.GameActivity`, `Application` = `.app.App`.
+- `:Bcore` — engine: Java (`zyn.bs.core.BlackBoxCore`), AIDL (`Bcore/src/main/aidl`), native C++ (`Bcore/src/main/cpp`). No prebuilt `.so` — compiled from source by the NDK.
 - `:black-reflection` — annotation/reflection stubs required by `:Bcore`.
 - `:compiler` — annotation processor for `:black-reflection`.
 
@@ -50,10 +50,10 @@
 - Engine gotcha: the sandbox redirects `SharedPreferences` into the game's own virtual data dir, so host and guest processes read *different* prefs files. Any decision shared between them must live in a file the guest can read, not in prefs.
 - Removed by this swap — do not resurrect: the Python SDK dumper (`sdk_dumper.cpp`, `py_runtime_dump.cpp`, `native_utils.cpp`, `third_party/`, `util/PySdkDumper.kt`) and its More-menu toggle (`action_dump_sdk`). `uploads/` (reference material, e.g. `src.zip`) and `tmp/` (scratch rigs) are gitignored.
 
-## Crash handling (`:app`)
-- **`CrashHandler.install()` runs in `App.attachBaseContext` immediately after `super.attachBaseContext` and before the first `BlackBoxCore` call** — that ordering is the point: a crash during engine init is exactly what it must catch, so it can never be installed later (not in `onCreate`, not in an Activity).
-- The report is **never written to disk**. It is formatted in memory, handed to `CrashActivity` via the `EXTRA_REPORT` intent extra (truncated to 200k chars, well under the binder limit), and the process is killed. There is no history file and no "last crash" cache — do not add one.
-- `CrashActivity` is declared with `android:process=":crash"` so it outlives the dying process, and `App` skips **all** engine setup in that process (both `attachBaseContext` and `onCreate`) — it has to render when the engine is the thing that failed. Keep those guards.
+## Crash handling
+- **There is no custom crash handler, and no engine crash-suite — both were deliberately removed. Do not reintroduce either.**
+- An app-side `CrashHandler` + `:crash` `CrashActivity` pair existed and was deleted. The engine's "crash prevention" set (`CrashMonitor`, `SimpleCrashFix`, `StackTraceFilter`, `NativeCrashPrevention`, `DexCrashPrevention`, `SocialMediaAppCrashPrevention`, `core/CrashHandler`) is still on disk but **unhooked**: no call sites remain in `BlackBoxCore`'s static init, `BlackBoxCore.installSystemHooks()`, or `BActivityThread.handleBindApplication()`. Fatal exceptions must propagate normally.
+- **Why the suite is an ANR trap (do not re-enable)**: `CrashMonitor.installGlobalCrashHandlers()` swallowed every uncaught exception and never rethrew — so a fatal main-thread exception left the Looper dead and Android reported *"not responding"* instead of a clean crash. Separately, `CrashMonitor.startPeriodicHealthChecks()` did file I/O and reflection on the **main** handler every 30 s / 60 s, and `DexCrashPrevention` hashed the APK periodically. That combination is why the hang showed up *minutes into gameplay* rather than at launch: the game hits an exception, nothing dies cleanly, and the next main-thread poll stops being serviced.
 - `release` has `minifyEnabled true` + `shrinkResources true`. Safe because nothing resolves resources by name (`Resources.getIdentifier` appears nowhere); the engine's reflection needs are covered by `proguard-rules.pro`.
 
 ## Toolchain

@@ -1,8 +1,8 @@
 package black.android.net.wifi;
 
 
-import top.niunaijun.blackreflection.annotation.BClassName;
-import top.niunaijun.blackreflection.annotation.BStaticField;
+import zyn.bs.core.reflection.annotation.BClassName;
+import zyn.bs.core.reflection.annotation.BStaticField;
 
 @BClassName("android.net.wifi.WifiScanner")
 public interface WifiScanner {

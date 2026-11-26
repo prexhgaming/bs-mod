@@ -1,8 +1,8 @@
 package black.android.webkit;
 
 
-import top.niunaijun.blackreflection.annotation.BClassName;
-import top.niunaijun.blackreflection.annotation.BMethod;
+import zyn.bs.core.reflection.annotation.BClassName;
+import zyn.bs.core.reflection.annotation.BMethod;
 
 @BClassName("android.webkit.IWebViewUpdateService")
 public interface IWebViewUpdateService {

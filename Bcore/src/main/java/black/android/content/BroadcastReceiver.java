@@ -3,11 +3,11 @@ package black.android.content;
 import android.os.Bundle;
 import android.os.IBinder;
 
-import top.niunaijun.blackreflection.annotation.BClassName;
-import top.niunaijun.blackreflection.annotation.BConstructor;
-import top.niunaijun.blackreflection.annotation.BField;
-import top.niunaijun.blackreflection.annotation.BMethod;
-import top.niunaijun.blackreflection.annotation.BParamClassName;
+import zyn.bs.core.reflection.annotation.BClassName;
+import zyn.bs.core.reflection.annotation.BConstructor;
+import zyn.bs.core.reflection.annotation.BField;
+import zyn.bs.core.reflection.annotation.BMethod;
+import zyn.bs.core.reflection.annotation.BParamClassName;
 
 @BClassName("android.content.BroadcastReceiver")
 public interface BroadcastReceiver {

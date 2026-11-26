@@ -1,8 +1,8 @@
 package black.java.lang;
 
 
-import top.niunaijun.blackreflection.annotation.BClassName;
-import top.niunaijun.blackreflection.annotation.BField;
+import zyn.bs.core.reflection.annotation.BClassName;
+import zyn.bs.core.reflection.annotation.BField;
 
 @BClassName("java.lang.ThreadGroup")
 public interface ThreadGroupN {

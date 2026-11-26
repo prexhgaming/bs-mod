@@ -1,8 +1,8 @@
 package black.android.app.servertransaction;
 
 
-import top.niunaijun.blackreflection.annotation.BClassName;
-import top.niunaijun.blackreflection.annotation.BMethod;
+import zyn.bs.core.reflection.annotation.BClassName;
+import zyn.bs.core.reflection.annotation.BMethod;
 
 @BClassName("android.app.servertransaction.ActivityLifecycleItem")
 public interface ActivityLifecycleItem {

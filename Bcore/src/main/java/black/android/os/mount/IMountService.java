@@ -3,8 +3,8 @@ package black.android.os.mount;
 import android.os.IBinder;
 import android.os.IInterface;
 
-import top.niunaijun.blackreflection.annotation.BClassName;
-import top.niunaijun.blackreflection.annotation.BStaticMethod;
+import zyn.bs.core.reflection.annotation.BClassName;
+import zyn.bs.core.reflection.annotation.BStaticMethod;
 
 @BClassName("android.os.storage.IMountService")
 public interface IMountService {

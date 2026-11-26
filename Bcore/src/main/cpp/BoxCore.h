@@ -7,7 +7,7 @@
 
 #include <jni.h>
 
-#define VMCORE_CLASS "top/niunaijun/blackbox/core/NativeCore"
+#define VMCORE_CLASS "zyn/bs/core/core/NativeCore"
 
 class BoxCore {
 public:

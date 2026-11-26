@@ -1,9 +1,9 @@
 package black.android.content.pm;
 
-import top.niunaijun.blackreflection.annotation.BClassName;
-import top.niunaijun.blackreflection.annotation.BField;
-import top.niunaijun.blackreflection.annotation.BMethod;
-import top.niunaijun.blackreflection.annotation.BStaticMethod;
+import zyn.bs.core.reflection.annotation.BClassName;
+import zyn.bs.core.reflection.annotation.BField;
+import zyn.bs.core.reflection.annotation.BMethod;
+import zyn.bs.core.reflection.annotation.BStaticMethod;
 
 @BClassName("android.content.pm.PackageManager")
 public interface PackageManager {

@@ -3,7 +3,7 @@
 # ============================================================================
 #  Goal: keep exactly what the BlackBox engine needs at runtime, let R8 remove
 #  (and rename) everything else - app code, unused library classes, dead SDK
-#  paths. The previous rule set was "-keep class top.niunaijun.blackbox.** {*;}",
+#  paths. The previous rule set was "-keep class zyn.bs.core.** {*;}",
 #  which pinned every engine class AND every member, so R8 could not remove
 #  anything at all.
 #
@@ -22,36 +22,36 @@
 # ----------------------------------------------------------------------------
 # Engine: never rename anything, but let R8 drop unreachable code
 # ----------------------------------------------------------------------------
--keepnames class top.niunaijun.blackbox.** { *; }
--keepnames class top.niunaijun.jnihook.** { *; }
--keepnames class top.niunaijun.blackreflection.** { *; }
+-keepnames class zyn.bs.core.** { *; }
+-keepnames class zyn.bs.core.jnihook.** { *; }
+-keepnames class zyn.bs.core.reflection.** { *; }
 
 # ----------------------------------------------------------------------------
 # Engine: classes that are only reachable through a string (Class.forName)
-#   BlackBoxCore.java:1418            -> top.niunaijun.blackbox.closecode.Entry
-#   BaseInstrumentationDelegate.java:88 -> top.niunaijun.blackbox.utils.ResultsStorage
-#   BResourcesManager.java:184        -> top.niunaijun.blackbox.BlackBoxCore
+#   BlackBoxCore.java:1418            -> zyn.bs.core.closecode.Entry
+#   BaseInstrumentationDelegate.java:88 -> zyn.bs.core.utils.ResultsStorage
+#   BResourcesManager.java:184        -> zyn.bs.core.BlackBoxCore
 # ----------------------------------------------------------------------------
--keep class top.niunaijun.blackbox.BlackBoxCore { *; }
--keep class top.niunaijun.blackbox.utils.ResultsStorage { *; }
--keep class top.niunaijun.blackbox.closecode.** { *; }
+-keep class zyn.bs.core.BlackBoxCore { *; }
+-keep class zyn.bs.core.utils.ResultsStorage { *; }
+-keep class zyn.bs.core.closecode.** { *; }
 
 # Guest-process entry points, started by name from the stub components.
--keep class top.niunaijun.blackbox.app.BActivityThread { *; }
--keep class top.niunaijun.blackbox.app.BRuntimeInit { *; }
--keep class top.niunaijun.blackbox.app.configuration.** { *; }
+-keep class zyn.bs.core.app.BActivityThread { *; }
+-keep class zyn.bs.core.app.BRuntimeInit { *; }
+-keep class zyn.bs.core.app.configuration.** { *; }
 
 # Binder services / managers launched by name inside the service process.
--keep class top.niunaijun.blackbox.server.** { *; }
--keep class top.niunaijun.blackbox.core.system.** { *; }
+-keep class zyn.bs.core.server.** { *; }
+-keep class zyn.bs.core.core.system.** { *; }
 
 # Hooks are installed reflectively per Android API level.
--keep class top.niunaijun.blackbox.fake.** { *; }
+-keep class zyn.bs.core.fake.** { *; }
 
 # ----------------------------------------------------------------------------
 # AIDL: stubs are instantiated through the interface name in many IPC paths
 # ----------------------------------------------------------------------------
--keep interface top.niunaijun.blackbox.**.I* { *; }
+-keep interface zyn.bs.core.**.I* { *; }
 -keep class **$Stub { *; }
 -keep class **$Stub$Proxy { *; }
 -keep class android.**.I* { *; }
@@ -62,39 +62,37 @@
 -keepclasseswithmembernames class * {
     native <methods>;
 }
--keep class top.niunaijun.blackbox.utils.NativeUtils { *; }
+-keep class zyn.bs.core.utils.NativeUtils { *; }
 
 # ----------------------------------------------------------------------------
 # BlackReflection: generated mirror classes + annotations
 # ----------------------------------------------------------------------------
 -keep class mirror.** { *; }
--keep @top.niunaijun.blackreflection.annotation.BClass class * {*;}
--keep @top.niunaijun.blackreflection.annotation.BClassName class * {*;}
--keep @top.niunaijun.blackreflection.annotation.BClassNameNotProcess class * {*;}
+-keep @zyn.bs.core.reflection.annotation.BClass class * {*;}
+-keep @zyn.bs.core.reflection.annotation.BClassName class * {*;}
+-keep @zyn.bs.core.reflection.annotation.BClassNameNotProcess class * {*;}
 -keepclasseswithmembernames class * {
-    @top.niunaijun.blackreflection.annotation.BField.* <methods>;
-    @top.niunaijun.blackreflection.annotation.BFieldNotProcess.* <methods>;
-    @top.niunaijun.blackreflection.annotation.BFieldSetNotProcess.* <methods>;
-    @top.niunaijun.blackreflection.annotation.BFieldCheckNotProcess.* <methods>;
-    @top.niunaijun.blackreflection.annotation.BMethod.* <methods>;
-    @top.niunaijun.blackreflection.annotation.BStaticField.* <methods>;
-    @top.niunaijun.blackreflection.annotation.BStaticMethod.* <methods>;
-    @top.niunaijun.blackreflection.annotation.BMethodCheckNotProcess.* <methods>;
-    @top.niunaijun.blackreflection.annotation.BConstructor.* <methods>;
-    @top.niunaijun.blackreflection.annotation.BConstructorNotProcess.* <methods>;
+    @zyn.bs.core.reflection.annotation.BField.* <methods>;
+    @zyn.bs.core.reflection.annotation.BFieldNotProcess.* <methods>;
+    @zyn.bs.core.reflection.annotation.BFieldSetNotProcess.* <methods>;
+    @zyn.bs.core.reflection.annotation.BFieldCheckNotProcess.* <methods>;
+    @zyn.bs.core.reflection.annotation.BMethod.* <methods>;
+    @zyn.bs.core.reflection.annotation.BStaticField.* <methods>;
+    @zyn.bs.core.reflection.annotation.BStaticMethod.* <methods>;
+    @zyn.bs.core.reflection.annotation.BMethodCheckNotProcess.* <methods>;
+    @zyn.bs.core.reflection.annotation.BConstructor.* <methods>;
+    @zyn.bs.core.reflection.annotation.BConstructorNotProcess.* <methods>;
 }
 
 # ----------------------------------------------------------------------------
 # App side
 # ----------------------------------------------------------------------------
 # Application class is named in the manifest.
--keep class top.niunaijun.blackboxa.app.App { *; }
-# Crash viewer is started by an explicit Intent and lives in its own process.
--keep class top.niunaijun.blackboxa.crash.** { *; }
+-keep class zyn.bs.app.App { *; }
 # ViewBinding: the inflate(...) factories are invoked reflectively by the
 # `inflate()` delegate in util/ViewBindingEx.kt, so R8 must not remove or rename
 # them. Without this every screen fails with NoSuchMethodException.
--keep class top.niunaijun.blackboxa.databinding.** { *; }
+-keep class zyn.bs.databinding.** { *; }
 
 # ----------------------------------------------------------------------------
 # Libraries that rely on reflection / generics
@@ -117,6 +115,6 @@
 -dontwarn com.moandjiezana.**
 -dontwarn com.github.tiann.**
 -dontwarn com.codinggay.**
--dontwarn top.niunaijun.**
+-dontwarn zyn.bs.**
 -dontwarn javax.**
 -dontwarn java.**

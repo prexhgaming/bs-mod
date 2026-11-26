@@ -1,7 +1,7 @@
 package black.java.io;
 
 
-import top.niunaijun.blackreflection.annotation.BClassName;
+import zyn.bs.core.reflection.annotation.BClassName;
 
 @BClassName("java.io.UnixFileSystem")
 public interface UnixFileSystem {

@@ -66,16 +66,4 @@
     <string name="message_clear_failed">Couldn\'t clear data</string>
     <string name="message_uninstalled">Removed from sandbox</string>
     <string name="message_uninstall_failed">Couldn\'t uninstall</string>
-
-    <!-- ===================== Crash viewer ===================== -->
-    <string name="crash_title">CRASH REPORT</string>
-    <string name="crash_headline">The app stopped unexpectedly</string>
-    <string name="crash_hint">Copy the log below and share it — it contains everything needed to find the cause.</string>
-    <string name="crash_hint_empty">No report was passed to this screen.</string>
-    <string name="crash_empty">Nothing to show</string>
-    <string name="crash_copy">COPY LOG</string>
-    <string name="crash_restart">RESTART</string>
-    <string name="crash_close">Close</string>
-    <string name="crash_copied">Copied to clipboard</string>
-    <string name="crash_copy_failed">Clipboard unavailable</string>
 </resources>

@@ -485,7 +485,7 @@ android {
     ndkVersion "29.0.13846066"
     
     defaultConfig {
-        applicationId "top.niunaijun.blackboxa"
+        applicationId "zyn.bs"
         minSdk 24
         targetSdk 34
         versionCode 2

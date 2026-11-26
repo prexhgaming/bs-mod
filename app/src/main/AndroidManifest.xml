@@ -10,8 +10,9 @@
          this app's permissions, not the game's. Declared here explicitly even
          though :Bcore also contributes RECORD_AUDIO — a silent dependency on a
          vendored module is exactly how the mic breaks without anyone noticing.
-         RECORD_AUDIO is dangerous, so it must also be requested at runtime
-         (GameActivity.requestGamePermissions); declaring it alone grants nothing. -->
+         The declaration is the grant channel; the *request* is left to the game
+         itself (the sandboxed activity asks for its own permissions), so the
+         launcher never shows a permission prompt of its own. -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
 
     <!-- Android 13+ gates game notifications behind an explicit grant. -->
@@ -34,17 +35,6 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.BlackBox"
         tools:targetApi="n">
-
-        <!-- Crash viewer. Separate process on purpose: the launcher's process is
-             already dying when this starts, and this screen must render even when
-             the engine is what failed (App skips engine setup in :crash). -->
-        <activity
-            android:name=".crash.CrashActivity"
-            android:excludeFromRecents="true"
-            android:exported="false"
-            android:launchMode="singleTask"
-            android:process=":crash"
-            android:theme="@style/Theme.BlackBox" />
 
         <!-- The only screen: a dedicated launcher for the target game. -->
         <activity

@@ -1,9 +1,9 @@
 package black.android.app;
 
 
-import top.niunaijun.blackreflection.annotation.BClassName;
-import top.niunaijun.blackreflection.annotation.BField;
-import top.niunaijun.blackreflection.annotation.BStaticField;
+import zyn.bs.core.reflection.annotation.BClassName;
+import zyn.bs.core.reflection.annotation.BField;
+import zyn.bs.core.reflection.annotation.BStaticField;
 
 @BClassName("android.app.WallpaperManager")
 public interface WallpaperManager {

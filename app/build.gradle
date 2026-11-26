@@ -11,12 +11,12 @@ if (keystorePropertiesFile.exists()) {
 
 android {
 
-    namespace 'top.niunaijun.blackboxa'
+    namespace 'zyn.bs'
     compileSdk rootProject.ext.compileSdkVersion
     ndkVersion = "29.0.13846066"
 
     defaultConfig {
-        applicationId "top.niunaijun.blackboxa"
+        applicationId "zyn.bs"
         minSdk rootProject.ext.minSdk
         targetSdk rootProject.ext.targetSdkVersion
         versionCode rootProject.ext.versionCode

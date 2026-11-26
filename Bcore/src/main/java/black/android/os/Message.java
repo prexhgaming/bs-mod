@@ -1,8 +1,8 @@
 package black.android.os;
 
 
-import top.niunaijun.blackreflection.annotation.BClassName;
-import top.niunaijun.blackreflection.annotation.BStaticMethod;
+import zyn.bs.core.reflection.annotation.BClassName;
+import zyn.bs.core.reflection.annotation.BStaticMethod;
 
 @BClassName("android.os.Message")
 public interface Message {

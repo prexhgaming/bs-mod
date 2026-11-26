@@ -20,8 +20,8 @@
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
 
--keep class top.niunaijun.blackbox.** {*; }
--keep class top.niunaijun.jnihook.** {*; }
+-keep class zyn.bs.core.** {*; }
+-keep class zyn.bs.core.jnihook.** {*; }
 -keep class mirror.** {*; }
 -keep class android.** {*; }
 -keep class com.android.** {*; }

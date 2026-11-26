@@ -4,8 +4,8 @@ import android.content.pm.PackageManager;
 import android.os.IInterface;
 import android.os.UserManager;
 
-import top.niunaijun.blackreflection.annotation.BClassName;
-import top.niunaijun.blackreflection.annotation.BField;
+import zyn.bs.core.reflection.annotation.BClassName;
+import zyn.bs.core.reflection.annotation.BField;
 
 @BClassName("android.content.pm.LauncherApps")
 public interface LauncherApps {

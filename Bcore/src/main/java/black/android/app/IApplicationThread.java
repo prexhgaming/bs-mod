@@ -6,8 +6,8 @@ import android.os.IBinder;
 
 import java.util.List;
 
-import top.niunaijun.blackreflection.annotation.BClassName;
-import top.niunaijun.blackreflection.annotation.BMethod;
+import zyn.bs.core.reflection.annotation.BClassName;
+import zyn.bs.core.reflection.annotation.BMethod;
 
 @BClassName("android.app.IApplicationThread")
 public interface IApplicationThread {

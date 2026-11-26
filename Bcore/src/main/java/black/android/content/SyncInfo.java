@@ -2,8 +2,8 @@ package black.android.content;
 
 import android.accounts.Account;
 
-import top.niunaijun.blackreflection.annotation.BClassName;
-import top.niunaijun.blackreflection.annotation.BConstructor;
+import zyn.bs.core.reflection.annotation.BClassName;
+import zyn.bs.core.reflection.annotation.BConstructor;
 
 @BClassName("android.content.SyncInfo")
 public interface SyncInfo {
