@@ -1,43 +1,39 @@
 #include "../obfuscate.h"
 
 const char* srcpy = O(R"srcpy(
-import json, threading, functools, time, socket
+import json, threading, functools, time, socket, os
 
 # ============================================================
-# 🔥 UDP CONFIGURATION
+# 🔥 RUNTIME DATA (file-based, read-only from our side)
 # ============================================================
-UDP_SEND_PORT = 50000   # C++ -> Python (sync commands)
-UDP_RECV_PORT = 50001   # Python -> C++ (ESP data)
+# The C++ side owns data.json: the menu writes a flat {key: value} snapshot of
+# the live toggles and we only read it. No port, no handshake, nothing lost if a
+# datagram is dropped. Python still needs one socket to push entity data back.
+#
+# data.json is NOT config.json. config.json is the menu's own nested
+# {"bool":..,"float":..,"int":..} settings file that has to survive a restart;
+# we must never write it, and the C++ side keeps the two apart on purpose.
+DATA_PATH     = "/storage/emulated/0/Nexora/data.json"
+UDP_RECV_PORT = 50001   # Python -> C++ (ESP entity data)
 
-# UDP Sockets
 _send_sock = None
-_recv_sock = None
 _udp_initialized = False
 
 def _init_udp():
-    global _send_sock, _recv_sock, _udp_initialized
+    global _send_sock, _udp_initialized
     if _udp_initialized:
         return
-    
     try:
-        # Send socket (Python -> C++)
         _send_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         _send_sock.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 2*1024*1024)
         _send_sock.setsockopt(socket.IPPROTO_IP, socket.IP_TOS, 0x10)
         _send_sock.settimeout(0.001)
-        
-        # Receive socket (C++ -> Python)
-        _recv_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        _recv_sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 2*1024*1024)
-        _recv_sock.bind(("127.0.0.1", UDP_SEND_PORT))
-        _recv_sock.settimeout(0.001)
-        
         _udp_initialized = True
     except Exception as e:
         print(f"[UDP] Init error: {e}")
 
 def _write_udp(data):
-    """Kirim data via UDP ke C++"""
+    """Send ESP data to C++"""
     global _send_sock
     if not _udp_initialized:
         _init_udp()
@@ -45,39 +41,45 @@ def _write_udp(data):
         if isinstance(data, str):
             data = data.encode('utf-8')
         _send_sock.sendto(data, ("127.0.0.1", UDP_RECV_PORT))
-    except Exception as e:
+    except Exception:
         pass
 
 # ============================================================
-# 🔥 UDP RECEIVER THREAD (dari C++)
+# 🔥 DATA READER
 # ============================================================
+# sync_attrs is kept as a plain dict so every existing
+# sync_attrs.get('bESP_...') call site works unchanged.
 sync_attrs = {}
+_data_mtime = None
+_data_lock = threading.Lock()
 
-def _read_udp_thread():
-    global _recv_sock, sync_attrs
-    if not _udp_initialized:
-        _init_udp()
-    
+def _read_data():
+    """Re-read data.json if it changed on disk. Cheap: one stat per tick."""
+    global sync_attrs, _data_mtime
+    try:
+        st = os.stat(DATA_PATH)
+        mtime = st.st_mtime_ns
+        if mtime == _data_mtime:
+            return
+        with open(DATA_PATH, 'r') as f:
+            parsed = json.load(f)
+        if isinstance(parsed, dict):
+            with _data_lock:
+                sync_attrs.update(parsed)
+            _data_mtime = mtime
+    except Exception:
+        pass
+
+def _data_thread():
     while True:
-        try:
-            data, addr = _recv_sock.recvfrom(65536)
-            if data:
-                try:
-                    parsed = json.loads(data.decode('utf-8'))
-                    if isinstance(parsed, dict):
-                        sync_attrs.update(parsed)
-                except:
-                    pass
-        except socket.timeout:
-            pass
-        except Exception:
-            pass
+        _read_data()
+        time.sleep(0.1)
 
 # ============================================================
-# 🔥 START UDP RECEIVER
+# 🔥 START DATA READER
 # ============================================================
-_init_udp()
-threading.Thread(target=_read_udp_thread, daemon=True).start()
+_read_data()
+threading.Thread(target=_data_thread, daemon=True).start()
 
 # ============================================================
 # 🔥 GAME IMPORTS — only what aim / visuals / weapon need

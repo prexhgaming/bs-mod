@@ -439,7 +439,7 @@ DEFINES(EGLBoolean, Draw, EGLDisplay dpy, EGLSurface surface) {
 
     sync_float["fWidth"] = (float)Width;
     sync_float["fHeight"] = (float)Height;
-    sync_with_py_immediate();  // 🔥 UDP VERSION
+    sync_with_py_immediate();  // snapshot the live values into data.json
 
     static bool imgui_context_ready = false;
 
@@ -517,7 +517,7 @@ DEFINES(EGLBoolean, Draw, EGLDisplay dpy, EGLSurface surface) {
         
         LoadConfig();
         
-        sync_with_py_immediate();  // 🔥 UDP VERSION
+        sync_with_py_immediate();  // snapshot the live values into data.json
         aimgui_thread_ready = true;
         // Publish readiness only now, once the context and its font atlas exist,
         // so the input thread may safely touch ImGui again.
