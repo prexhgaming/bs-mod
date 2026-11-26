@@ -4,9 +4,7 @@
 #endif
 #define INL_PATH "/storage/emulated/0/Nexora/imgui.ini"
 
-#include "AImGui/AImGui.hpp"
 #include "AImGui/FrameRateController.hpp"
-#include "AImGui/NativeActivityHelper.hpp"
 
 #include <string>
 #include <vector>
@@ -73,7 +71,6 @@ extern ANativeActivity* g_activity;
 extern int Width, Height;
 extern int screenWidth, screenHeight;
 extern std::atomic<bool> aimgui_thread_ready;
-extern bool g_use_aimgui_skip;
 extern bool windowOpen;
 extern std::unordered_map<std::string, bool> sync_bool;
 extern std::unordered_map<std::string, float> sync_float;
@@ -103,10 +100,12 @@ static const float FPS_DRAG_THRESHOLD = 10.f;
 static std::mutex g_font_mutex;
 
 // ============================================================
-// 🔥 AImGui GLOBAL POINTER
+// 🔥 ImGui renders on the GAME's thread and context
 // ============================================================
-static android::AImGui* g_aimgui = nullptr;
-static std::mutex g_aimgui_mutex;
+// There is no overlay EGL context any more: Draw() is hooked onto
+// eglSwapBuffers, which the game calls on its own render thread with its own
+// context current, so ImGui paints into the game's back buffer. One thread,
+// one context, one font atlas.
 
 using namespace ImGui;
 using namespace std;
@@ -124,7 +123,6 @@ static void iOS_GlassPanel(ImDrawList* dl, ImVec2 a, ImVec2 b, float rounding = 
     );
 }
 
-static void AImGuiSetup();
 static void noMore(ImDrawList* dl);
 static void DrawMiniFps(ImDrawList* draw, float fps);
 static void ClearNexoraImGuiWindowTracking();
@@ -289,12 +287,7 @@ static void SetupRenderOptimization() {
 
 static void CleanupGL() {
     if (g_logo_tex) { glDeleteTextures(1, &g_logo_tex); g_logo_tex = 0; }
-    
-    if (g_aimgui) {
-        delete g_aimgui;
-        g_aimgui = nullptr;
-    }
-    
+
     ImGui_ImplOpenGL3_Shutdown(); ImGui_ImplAndroid_Shutdown(); ImGui::DestroyContext();
 }
 
@@ -376,7 +369,7 @@ int32_t hooked_AInputQueue_getEvent(AInputQueue *queue, AInputEvent **outEvent) 
     int32_t res = orig_AInputQueue_getEvent(queue, outEvent);
     // Replaces the bare `setup` flag: this runs on the game's input thread, where
     // the ImGui context can be null (before the first frame rendered, or after
-    // AImGui tore its context down) and ImGui::GetIO() would dereference null.
+    // CleanupGL destroyed it) and ImGui::GetIO() would dereference null.
     if (res >= 0 && nx::imguiInputSafe() && outEvent && *outEvent) {
         int eventType = AInputEvent_getType(*outEvent);
         if (eventType == AINPUT_EVENT_TYPE_MOTION) {
@@ -457,6 +450,10 @@ int32_t hooked_AInputQueue_getEvent(AInputQueue *queue, AInputEvent **outEvent) 
 }
 
 DEFINES(EGLBoolean, Draw, EGLDisplay dpy, EGLSurface surface) {
+    // A swap can arrive with no real surface (shutdown, surface teardown); pass
+    // it straight through instead of querying or drawing on it.
+    if (dpy == EGL_NO_DISPLAY || surface == EGL_NO_SURFACE) return _Draw(dpy, surface);
+
     eglQuerySurface(dpy, surface, EGL_WIDTH, &Width);
     eglQuerySurface(dpy, surface, EGL_HEIGHT, &Height);
     if (Width <= 0 || Height <= 0) return _Draw(dpy, surface);
@@ -465,22 +462,10 @@ DEFINES(EGLBoolean, Draw, EGLDisplay dpy, EGLSurface surface) {
     sync_float["fHeight"] = (float)Height;
     sync_with_py_immediate();  // 🔥 UDP VERSION
 
-    // ============================================================
-    // 🔥 UPDATE AImGui DISPLAY SIZE
-    // ============================================================
-    if (g_aimgui) {
-        static int lastW = 0, lastH = 0;
-        if (lastW != Width || lastH != Height) {
-            g_aimgui->SetDisplaySize(Width, Height);
-            lastW = Width;
-            lastH = Height;
-        }
-    }
-
     static bool imgui_context_ready = false;
 
-    // AImGui::UnInitEnvironment() calls ImGui::DestroyContext(), which leaves no
-    // current context, so this can be null even after the first frame. Rebuild it
+    // CleanupGL() calls ImGui::DestroyContext(), which leaves no current
+    // context, so this can be null even after the first frame. Rebuild it
     // instead of dereferencing a null GImGui further down.
     if (!ImGui::GetCurrentContext()) {
         nx::imguiBeginTeardown();
@@ -498,6 +483,11 @@ DEFINES(EGLBoolean, Draw, EGLDisplay dpy, EGLSurface surface) {
             return _Draw(dpy, surface);
         }
         ImGui_ImplOpenGL3_Init("#version 300 es");
+        // There is no overlay ANativeWindow any more: ImGui draws into the game's
+        // own back buffer. Init with nullptr so the backend keeps the key map /
+        // platform setup, and let NewFrame() fall back to the eglQuerySurface
+        // size that Draw() passes in.
+        ImGui_ImplAndroid_Init(nullptr);
 
         if (!g_logo_tex) {
             glGenTextures(1, &g_logo_tex);
@@ -600,35 +590,13 @@ static EGLBoolean hooked_eglSwapInterval(EGLDisplay dpy, EGLint interval) {
 }
 
 // ============================================================
-// 🔥 IMGUI() - INISIALISASI AImGui
+// 🔥 IMGUI() - INSTALL THE SWAP HOOK
 // ============================================================
 void IMGUI() {
     start_entity_reader();
 
     // FrameRateController - minta 90Hz display mode
     FrameRateController::Apply(g_activity, eglGetCurrentDisplay(), true, 90.0f);
-
-    // ============================================================
-    // 🔥 INISIALISASI AImGui OVERLAY
-    // ============================================================
-    android::AImGui::Options opts;
-    opts.activity = g_activity;
-    opts.skipScreenshot = false;
-    opts.onSetup = []() {
-        AddNotification("🔒 Secure Overlay Ready", 140, 89, 242, 2.0f);
-    };
-    
-    g_aimgui = new android::AImGui(opts);
-    if (g_aimgui && *g_aimgui) {
-        g_aimgui->SetDisplaySize(screenWidth, screenHeight);
-        AddNotification("✅ Overlay Initialized", 80, 220, 80, 2.0f);
-    } else {
-        AddNotification("❌ Overlay Failed!", 255, 80, 80, 2.0f);
-        if (g_aimgui) {
-            delete g_aimgui;
-            g_aimgui = nullptr;
-        }
-    }
 
     void *libAndroid = dlopen("libandroid.so", RTLD_NOW);
     if (libAndroid) {
@@ -648,9 +616,40 @@ void IMGUI() {
             DobbyHook(eglSwapIntervalFunc, (void *)hooked_eglSwapInterval, (void **)&orig_eglSwapInterval);
         }
     }
-    
-    HOOKIT("libEGL.so", "eglSwapBuffers", Draw);  
-    LOGI("RETURNING FROM __IMGUI__");
+
+    // ============================================================
+    // 🔥 HOOK eglSwapBuffers -> Draw()
+    // ============================================================
+    // Resolved through Dobby's own symbol resolver rather than fake_dlfcn +
+    // AndInlineHook, so there is exactly one hooking engine in the picture.
+    //
+    // The game calls eglSwapBuffers on ITS OWN render thread with ITS OWN EGL
+    // context current, so Draw() paints ImGui straight into the game's back
+    // buffer before the swap. That means one thread, one EGL context and one
+    // font atlas for the whole process. The previous overlay owned a second
+    // EGL context plus a full-screen SurfaceControl window surface (3 screen-
+    // sized buffers) whose BeginFrame()/EndFrame() were never called, so all of
+    // it was allocated and never drew a single pixel.
+    void *eglSwapBuffersAddr = DobbySymbolResolver("libEGL.so", "eglSwapBuffers");
+    if (!eglSwapBuffersAddr) {
+        // Some vendor builds only export it from the global namespace.
+        eglSwapBuffersAddr = dlsym(RTLD_DEFAULT, "eglSwapBuffers");
+    }
+    if (!eglSwapBuffersAddr) {
+        LOGE("eglSwapBuffers not found - menu will not render");
+        AddNotification("❌ Swap hook failed!", 255, 80, 80, 3.0f);
+        return;
+    }
+
+    int hookResult = DobbyHook(eglSwapBuffersAddr, (void *)Draw, (void **)&_Draw);
+    if (hookResult != 0 || !_Draw) {
+        LOGE("eglSwapBuffers hook failed (%d) at %p", hookResult, eglSwapBuffersAddr);
+        AddNotification("❌ Swap hook failed!", 255, 80, 80, 3.0f);
+        return;
+    }
+
+    AddNotification("✅ Nexora Ready", 80, 220, 80, 2.0f);
+    LOGI("eglSwapBuffers hooked at %p", eglSwapBuffersAddr);
 }
 
 __attribute__((destructor))

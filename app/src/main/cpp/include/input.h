@@ -69,10 +69,10 @@ DEFINES(void, InitializeMotionEvent, AInputEvent* event, const void* msg) {
     if (!event) return;
 
     // Runs on the game's input thread and fires on EVERY motion event, including
-    // before the first eglSwapBuffers created a context and after
-    // AImGui::UnInitEnvironment() destroyed one. The ImGui Android backend calls
-    // ImGui::GetIO(), which dereferences the (null) global context in release
-    // builds -- that is the tap-to-crash. Forward only when a live context exists.
+    // before the first eglSwapBuffers created a context and after CleanupGL()
+    // destroyed one. The ImGui Android backend calls ImGui::GetIO(), which
+    // dereferences the (null) global context in release builds -- that is the
+    // tap-to-crash. Forward only when a live context exists.
     if (!nx::imguiInputSafe()) return;
 
     ImGui_ImplAndroid_HandleInputEvent(event, {0.0f, 0.0f});

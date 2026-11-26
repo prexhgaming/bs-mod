@@ -49,8 +49,6 @@ endif
 # ── Source Files ──────────────────────────────────────────────
 LOCAL_SRC_FILES := \
     main.cpp \
-    AImGui/AImGui.cpp \
-    AImGui/NativeActivityHelper.cpp \
     AImGui/FrameRateController.cpp \
     KittyMemory/KittyMemory.cpp \
     KittyMemory/MemoryPatch.cpp \

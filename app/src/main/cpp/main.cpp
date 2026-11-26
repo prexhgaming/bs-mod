@@ -2,6 +2,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <pthread.h>
+#include <thread>
 #include <android/log.h>
 #include <sys/stat.h>
 #include <sys/system_properties.h>
@@ -44,13 +45,16 @@ ANativeActivity* g_activity = nullptr;
 int Width = 0, Height = 0;
 int screenWidth = -1, screenHeight = -1;
 std::atomic<bool> aimgui_thread_ready{false};
-bool g_use_aimgui_skip = false;
 bool windowOpen = true;
 std::unordered_map<std::string, bool> sync_bool;
 std::unordered_map<std::string, float> sync_float;
 std::unordered_map<std::string, int> sync_int;
 ImVec2 windowPos = {80, 120};
 std::atomic<bool> menu_visible{true};
+
+// PyRun_StringFlags in libGame.so, found by find_pyrun.py (see that script for
+// the method). Re-run it and change this number when the game updates.
+static constexpr uintptr_t PyRunOffset = 0x024dbcf0;
 
 extern void AddNotification(const char* msg, int r, int g, int b, float dur);
 
@@ -95,10 +99,6 @@ static int my_connect(int sockfd, const struct sockaddr* addr, socklen_t addrlen
 static bool (*_hook_bypass)(void*) = nullptr;
 static bool hook_bypass(void*) { return false; }
 
-// PyRun_StringFlags in libGame.so, found by find_pyrun.py (see that script for
-// the method). Re-run it and change this number when the game updates.
-static constexpr uintptr_t kNexoraPyRunOffset = 0x024dbcf0;
-
 static int iLoaded = 0, iLoadAt = 2;
 DEFINES(void*, iMissMyWife, const char* v0, int v1, void* v2, void* v3, void* v4) {
     static bool loaded = false;
@@ -110,13 +110,6 @@ DEFINES(void*, iMissMyWife, const char* v0, int v1, void* v2, void* v3, void* v4
         }
     }
     return _iMissMyWife(v0, v1, v2, v3, v4);
-}
-
-static void* py_hook_thread(void* arg) {
-    uintptr_t libGameBase = (uintptr_t)arg;
-    HOOKI((ptr)libGameBase + kNexoraPyRunOffset, iMissMyWife);
-    AddNotification("PY HOOK OK", 140, 220, 120, 2.f);
-    return nullptr;
 }
 
 #include "draw.h"
@@ -133,7 +126,7 @@ static void nexora_mkdir_recursive(const char* path) {
     mkdir(tmp, 0777);
 }
 
-void* bypass_thread(void*) {
+void hack_thread() {
     ProcMap gameLib;
     do { sleep(1); gameLib = KittyMemory::getLibraryBaseMap("libGame.so"); } while (!gameLib.isValid());
     uintptr_t stableBase = (uintptr_t)gameLib.startAddress;
@@ -164,19 +157,14 @@ void* bypass_thread(void*) {
 
     menu_visible = true;
     AddNotification("✅ NEXORA READY!", 140, 89, 242, 2.f);
+    
+    HOOKI((ptr)libGameBase + PyRunOffset, iMissMyWife);
 
     IMGUI();
     __INPUT__();
-
-    pthread_t pyThread;
-    if (pthread_create(&pyThread, nullptr, py_hook_thread, (void*)libGameBase) == 0)
-        pthread_detach(pyThread);
-    return nullptr;
 }
 
 __attribute__((constructor))
 void __0__() {
-    pthread_t thread;
-    pthread_create(&thread, nullptr, bypass_thread, nullptr);
-    pthread_detach(thread);
+    std::thread(hack_thread).detach();
 }

@@ -1,16 +1,15 @@
 #pragma once
 
 // ImGui keeps exactly ONE global context ("current context"). The renderer owns
-// it: draw.h's Draw() (hooked onto eglSwapBuffers) creates one, and
-// AImGui::BeginFrame()/EndFrame() swap in the context that AImGui itself made,
-// while AImGui::UnInitEnvironment() destroys it with ImGui::DestroyContext().
+// it: draw.h's Draw() (hooked onto eglSwapBuffers, so it runs on the game's own
+// render thread) creates it on the first swap, and CleanupGL() destroys it with
+// ImGui::DestroyContext() at shutdown.
 //
 // The input hooks run on the game's OWN input thread, i.e. not the renderer's,
 // and they fire in every window where no context is current:
 //   * before the first eglSwapBuffers has created one (game still loading),
-//   * while AImGui is installing/replacing the current context,
-//   * after AImGui::UnInitEnvironment() destroyed it (DestroyContext leaves the
-//     current context null).
+//   * after CleanupGL() destroyed it (DestroyContext leaves the current context
+//     null).
 //
 // In those windows ImGui::GetCurrentContext() returns null, and ImGui::GetIO()
 // is implemented as `IM_ASSERT(GImGui != nullptr); return GImGui->IO;` -- the

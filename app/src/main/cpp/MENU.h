@@ -1,5 +1,4 @@
 #pragma once
-#include "AImGui/AImGui.hpp"
 #include "imgui/backends/imgui_impl_opengl3.h"
 #include <string>
 #include <atomic>
