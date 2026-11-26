@@ -322,20 +322,23 @@
 
         <!--safekey adapter-->
         <service android:name="com.xdja.tun.TunVpnService"
-            android:permission="android.permission.BIND_VPN_SERVICE">
+            android:permission="android.permission.BIND_VPN_SERVICE"
+            android:exported="true">
             <intent-filter>
                 <action android:name="android.net.VpnService"/>
             </intent-filter>
         </service>
         <service android:name="com.xdja.safeclient.TunVpnService"
-        android:permission="android.permission.BIND_VPN_SERVICE">
-        <intent-filter>
-            <action android:name="android.net.VpnService"/>
-        </intent-filter>
-    </service>
+            android:permission="android.permission.BIND_VPN_SERVICE"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.net.VpnService"/>
+            </intent-filter>
+        </service>
 
         <service android:name="com.xdja.tunvpn.core.TunVpnService"
-            android:permission="android.permission.BIND_VPN_SERVICE">
+            android:permission="android.permission.BIND_VPN_SERVICE"
+            android:exported="true">
             <intent-filter>
                 <action android:name="android.net.VpnService"/>
             </intent-filter>
@@ -3426,7 +3429,8 @@
         <service
             android:name="com.xdja.call.PhoneCallService"
             android:process=":x"
-            android:permission="android.permission.BIND_INCALL_SERVICE">
+            android:permission="android.permission.BIND_INCALL_SERVICE"
+            android:exported="true">
             <meta-data
                 android:name="android.telecom.IN_CALL_SERVICE_UI"
                 android:value="true" />
@@ -3437,13 +3441,14 @@
 
         <service
             android:name="com.xdja.zs.NotificationListener"
-            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE"
+            android:exported="true">
             <intent-filter>
                 <action android:name="android.service.notification.NotificationListenerService"/>
             </intent-filter>
         </service>
 
-        <activity android:name="com.xdja.call.DialerActivity">
+        <activity android:name="com.xdja.call.DialerActivity" android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.DIAL" />
                 <action android:name="android.intent.action.VIEW" />
@@ -3466,7 +3471,8 @@
         <!-- Intents for KLP+ Delivery -->
         <receiver android:name="com.xdja.mms.receiver.MmsWapPushDeliverReceiver"
             android:process=":x"
-            android:permission="android.permission.BROADCAST_WAP_PUSH">
+            android:permission="android.permission.BROADCAST_WAP_PUSH"
+            android:exported="true">
             <intent-filter>
                 <action android:name="android.provider.Telephony.WAP_PUSH_DELIVER" />
                 <data android:mimeType="application/vnd.wap.mms-message" />
@@ -3474,14 +3480,16 @@
         </receiver>
         <receiver android:name="com.xdja.mms.receiver.SmsDeliverReceiver"
             android:process=":x"
-            android:permission="android.permission.BROADCAST_SMS">
+            android:permission="android.permission.BROADCAST_SMS"
+            android:exported="true">
             <intent-filter>
                 <action android:name="android.provider.Telephony.SMS_DELIVER" />
             </intent-filter>
         </receiver>
         <receiver android:name="com.xdja.mms.receiver.SmsReceiver"
             android:permission="android.permission.BROADCAST_SMS"
-            android:process=":x">
+            android:process=":x"
+            android:exported="true">
             <intent-filter android:priority="2147483647">
                 <action android:name="android.provider.Telephony.SMS_RECEIVED"/>
             </intent-filter>
@@ -3497,6 +3505,7 @@
             android:process=":x"
             android:screenOrientation="user"
             android:excludeFromRecents="true"
+            android:exported="true"
             android:theme="@android:style/Theme.Translucent.NoTitleBar">
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
@@ -3533,6 +3542,7 @@
         <activity
             android:name="com.xdja.zs.UacProxyActivity"
             android:configChanges="orientation|keyboardHidden|screenSize"
+            android:exported="true"
             android:theme="@android:style/Theme.Translucent.NoTitleBar.Fullscreen">
             <intent-filter>
                 <data android:scheme="xdja" android:host="${AUTHORITY_PREFIX}" android:path="/authorize"/>
@@ -3546,6 +3556,7 @@
             android:name="com.lody.virtual.client.stub.usb.ShadowUsbActivity"
             android:configChanges="locale|keyboardHidden|orientation|screenSize|fontScale"
             android:excludeFromRecents="true"
+            android:exported="true"
             android:theme="@android:style/Theme.Translucent.NoTitleBar"
             android:taskAffinity="com.lody.virtual.choose"
             android:launchMode="singleTop">
