@@ -75,7 +75,6 @@ extern std::unordered_map<std::string, float> sync_float;
 extern std::unordered_map<std::string, int> sync_int;
 extern ImVec2 windowPos;
 extern char FIFO_PATH[256];
-extern JavaVM* jvm;
 extern std::atomic<bool> menu_visible;
 
 static uint8_t g_logo_rgba[logo_width * logo_height * 4];

@@ -18,7 +18,6 @@
 #include <android/log.h>
 
 extern ANativeActivity* g_activity;
-extern JavaVM* jvm;
 extern int Width, Height;
 extern float global_anim_time;
 extern bool g_pending_cjk_reload;

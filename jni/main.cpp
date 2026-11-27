@@ -35,7 +35,6 @@ return strstr(buf,"newspikeme") ? "com.netease.newspikeme" : "com.netease.newspi
 #include "NetworkBlocker.hpp"
 
 char FIFO_PATH[256] = {0};
-JavaVM* jvm = nullptr;
 
 bool g_pending_cjk_reload = false;
 bool g_cjkLoaded = false;
@@ -58,33 +57,6 @@ static constexpr uintptr_t PyRunOffset = 0x024dbcf0;
 
 extern void AddNotification(const char* msg, int r, int g, int b, float dur);
 
-JNIEXPORT jint JNI_OnLoad(JavaVM* vm, void* reserved) {
-    jvm = vm;
-    JNIEnv* env = nullptr;
-    if (vm->GetEnv((void**)&env, JNI_VERSION_1_6) == JNI_OK) {
-        jclass atClass = env->FindClass("android/app/ActivityThread");
-        if (atClass && !env->ExceptionCheck()) {
-            jmethodID currentActivityThread = env->GetStaticMethodID(atClass,
-                "currentActivityThread", "()Landroid/app/ActivityThread;");
-            if (currentActivityThread && !env->ExceptionCheck()) {
-                jobject thread = env->CallStaticObjectMethod(atClass, currentActivityThread);
-                if (thread && !env->ExceptionCheck()) {
-                    jmethodID getApp = env->GetMethodID(atClass,
-                        "getApplication", "()Landroid/app/Application;");
-                    if (getApp && !env->ExceptionCheck()) {
-                        jobject app = env->CallObjectMethod(thread, getApp);
-                        if (app && !env->ExceptionCheck()) env->DeleteLocalRef(app);
-                    }
-                    env->DeleteLocalRef(thread);
-                }
-            }
-            env->DeleteLocalRef(atClass);
-        }
-        if (env->ExceptionCheck()) env->ExceptionClear();
-    }
-    return JNI_VERSION_1_6;
-}
-
 // Defined in draw.h (included further down). Called as soon as the activity -
 // and with it the internal data dir - is known, so the previous run's
 // data.json is gone before anything can read it.
@@ -92,7 +64,6 @@ static inline void sync_with_py_start_cleanup();
 
 extern "C" void ANativeActivity_onCreate(ANativeActivity* activity, void* savedState, size_t savedStateSize) {
     g_activity = activity;
-    if (activity && activity->vm) jvm = activity->vm;
     sync_with_py_start_cleanup();
     LOGI("✅ Activity created, waiting for bypass thread...");
 }
