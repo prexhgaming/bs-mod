@@ -32,11 +32,15 @@ def _proc_pkg():
     return name.split(':')[0] or 'com.netease.newspike'
 
 _PKG = _proc_pkg()
+# Internal data dir only - the single path C++ writes (GetConfigDir()).
+# The old list also had /storage/emulated/0/Nexora/data.json, which was C++'s
+# fallback for "activity not up yet". That fallback is gone, and leaving the
+# entry here would let a stale external file shadow the live internal one.
+# /data/user/0 and /data/data are the same internal dir through different
+# mounts; both spellings are kept because the sandbox may rewrite only one.
 _DATA_CANDIDATES = [
-    '/data/data/%s/files/Nexora/data.json'   % _PKG,
     '/data/user/0/%s/files/Nexora/data.json' % _PKG,
-    '/data/data/%s/Nexora/data.json'         % _PKG,
-    '/storage/emulated/0/Nexora/data.json',
+    '/data/data/%s/files/Nexora/data.json'   % _PKG,
 ]
 DATA_PATH     = _DATA_CANDIDATES[0]
 UDP_RECV_PORT = 50001   # Python -> C++ (ESP entity data)
@@ -122,6 +126,8 @@ def _data_thread():
 # ============================================================
 # 🔥 START DATA READER
 # ============================================================
+# Settings come from data.json and nowhere else: whatever values C++ wrote are
+# the values the features use.
 _read_data()
 if sync_attrs:
     print(f"[CFG] data.json = {DATA_PATH} ({len(sync_attrs)} keys)")
@@ -554,11 +560,16 @@ def AIMUpdate(*_, **__):
         if not localEntity or not localEntity.is_alive:
             return
         trigger = sync_attrs.get('iAIM_Trigger', 2)
-        # Menu: 0=OFF, 1=On Shoot, 2=On ADS, 3=Both
-        if trigger == 0: return  # OFF: never aim
-        if trigger == 1 and not localEntity.is_shooting: return  # On Shoot: only when firing
-        if trigger == 2 and not localEntity.is_ads:      return  # On ADS: only when aiming down sights
-        if trigger == 3 and not (localEntity.is_ads or localEntity.is_shooting): return  # Both
+        # Menu: 0=OFF, 1=On Shoot, 2=On ADS, 3=Both.
+        # getattr, not attribute access: these two flags do not exist on every
+        # avatar subclass, and an AttributeError here unwinds the whole update
+        # into the outer handler - which looks exactly like "aim does nothing".
+        _is_shooting = bool(getattr(localEntity, 'is_shooting', False))
+        _is_ads      = bool(getattr(localEntity, 'is_ads', False))
+        if trigger == 0: return                                    # OFF
+        if trigger == 1 and not _is_shooting: return               # On Shoot
+        if trigger == 2 and not (_is_ads or _is_shooting): return  # On ADS
+        # trigger == 3 (Both): no gate, aim continuously
         if not FpsPlacerInstance:
             # Hook-injected instance is primary; fall back to the camera's
             # fps_placer if the OnStaticTick hook never fired.

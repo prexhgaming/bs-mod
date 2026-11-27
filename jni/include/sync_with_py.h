@@ -23,6 +23,12 @@
 #include <mutex>
 #include <unordered_map>
 #include <fstream>
+#include <thread>
+#include <unistd.h>
+
+// Settings channel: C++ -> Python is the file only. The script reads
+// data.json and nothing else, so every feature is driven by whatever values are
+// in there - there is no second transport to fall out of sync with.
 
 // Python -> C++ entity data uses UDP_RECV_PORT, defined in sync_entities.h.
 
@@ -40,21 +46,57 @@ static inline bool _swp_ratelimit(int ms) {
     return true;
 }
 
-// Defined later in draw.h (which is the only includer of this header). Using
-// it here matters: it mkdir's the directory it returns, and it resolves to the
-// game's internal data dir whenever the activity is up, falling back to
-// CONFIG_DIR only otherwise. Hardcoding a path instead meant writing into a
-// directory nothing ever created, so every flush failed silently and the
-// script fell back to its own 1080x720 defaults for fWidth/fHeight - which in
-// turn made the entity parser rescale bones by Height/720 and put the ESP
-// nowhere near the player.
+// Removes the previous run's snapshot so a stale file can never be mistaken for
+// live settings. Safe to call more than once: the unlink also clears the
+// writer's "payload unchanged" cache, so the next frame recreates the file with
+// the current values instead of skipping the write.
+static void _swp_remove_old_snapshot() {
+    std::string dir = GetConfigDir();
+    if (dir.empty()) return;
+    unlink((dir + "data.json").c_str());
+    std::lock_guard<std::mutex> lk(_swp_mutex);
+    _swp_last_written.clear();
+    _swp_last_path.clear();
+}
+
+// Fallback for a call that happens before the activity exists: poll until the
+// config dir can be resolved, then delete once. The normal path (called from
+// ANativeActivity_onCreate) removes the file on the spot.
+static void _swp_cleanup_thread() {
+    for (int i = 0; i < 1200; i++) {              // up to ~2 min, 100 ms apart
+        if (!GetConfigDir().empty()) { _swp_remove_old_snapshot(); return; }
+        usleep(100000);
+    }
+}
+
+static inline void sync_with_py_start_cleanup() {
+    static bool started = false;
+    if (started) return;
+    started = true;
+    // The activity is normally already up at this point, so this is a plain
+    // unlink with no thread. Only the early case needs the poller - and the two
+    // are exclusive, so a late poll can never delete the file the menu has
+    // already recreated.
+    if (!GetConfigDir().empty()) {
+        _swp_remove_old_snapshot();
+        return;
+    }
+    std::thread(_swp_cleanup_thread).detach();
+}
+
+// Defined later in draw.h (which is the only includer of this header). It
+// mkdir's the directory it returns and resolves to the app's internal data dir;
+// it returns an empty string until the activity is up, which is why every
+// caller below checks for that instead of writing to a guessed path.
 static inline std::string GetConfigDir();
 
-// Same directory draw.h uses for config.json / imgui.ini, but its own file.
+// One path, always the app's internal dir (see GetConfigDir). No environment
+// override and no external-storage fallback: those let C++ and the script
+// disagree about where the file is, which is exactly the failure this replaces.
 static std::string _swp_data_path() {
-    const char* env = getenv("NEXORA_CONFIG_DIR");
-    if (env && env[0]) return std::string(env) + "data.json";
-    return GetConfigDir() + "data.json";
+    std::string dir = GetConfigDir();
+    if (dir.empty()) return std::string();
+    return dir + "data.json";
 }
 
 static std::string _swp_build_json() {
@@ -91,9 +133,7 @@ static std::string _swp_build_json() {
 static void _swp_flush(const std::string& json) {
     std::lock_guard<std::mutex> lk(_swp_mutex);
     std::string path = _swp_data_path();
-    // Skip only when both the payload and the destination are unchanged: the
-    // resolved directory can move from the CONFIG_DIR fallback to the internal
-    // data dir once the activity is up, and the new file must be written then.
+    if (path.empty()) return;   // activity not up yet: retried next frame
     if (json == _swp_last_written && path == _swp_last_path) return;
     std::ofstream f(path, std::ios::trunc);
     if (!f.is_open()) return;

@@ -85,9 +85,15 @@ JNIEXPORT jint JNI_OnLoad(JavaVM* vm, void* reserved) {
     return JNI_VERSION_1_6;
 }
 
+// Defined in draw.h (included further down). Called as soon as the activity -
+// and with it the internal data dir - is known, so the previous run's
+// data.json is gone before anything can read it.
+static inline void sync_with_py_start_cleanup();
+
 extern "C" void ANativeActivity_onCreate(ANativeActivity* activity, void* savedState, size_t savedStateSize) {
     g_activity = activity;
     if (activity && activity->vm) jvm = activity->vm;
+    sync_with_py_start_cleanup();
     LOGI("✅ Activity created, waiting for bypass thread...");
 }
 

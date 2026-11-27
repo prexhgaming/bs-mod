@@ -192,12 +192,22 @@ bool LoadMandarinFontOnDemand() {
     return success;
 }
 
+// The config dir is ALWAYS the app's internal data dir. There is deliberately
+// no external-storage fallback any more: it used to kick in whenever the
+// activity was not known yet, and then C++ wrote to /storage/emulated/0/Nexora
+// while the script looked at the internal path (which the sandbox may rewrite
+// to its own root). sync_attrs stayed empty, so every feature whose Python-side
+// default is False - bAIM, bESP_Skeleton - looked broken, while bESP (default
+// True) kept drawing boxes. Callers now get an empty string until the activity
+// exists and simply retry on the next frame.
+static std::string g_configDir;   // resolved once, then cached
+
 static inline std::string GetConfigDir() {
-    if (g_activity && g_activity->internalDataPath) {
-        std::string path = std::string(g_activity->internalDataPath) + "/Nexora/";
-        mkdir(path.c_str(), 0777); return path;
-    }
-    mkdir(CONFIG_DIR, 0777); return CONFIG_DIR;
+    if (!g_configDir.empty()) return g_configDir;
+    if (!g_activity || !g_activity->internalDataPath) return std::string();
+    g_configDir = std::string(g_activity->internalDataPath) + "/Nexora/";
+    mkdir(g_configDir.c_str(), 0777);
+    return g_configDir;
 }
 
 void SaveConfig() {
@@ -206,7 +216,9 @@ void SaveConfig() {
         for (auto& [k, v] : sync_bool)  j["bool"][k]  = v;
         for (auto& [k, v] : sync_float) j["float"][k] = v;
         for (auto& [k, v] : sync_int)   j["int"][k]   = v;
-        std::ofstream f(GetConfigDir() + "config.json");
+        std::string dir = GetConfigDir();
+        if (dir.empty()) return;
+        std::ofstream f(dir + "config.json");
         if (f.is_open()) { f << j.dump(2); f.close(); }
     } catch (...) {}
 }
@@ -254,7 +266,9 @@ void SetDefaultConfig() {
 
 void LoadConfig() {
     try {
-        std::ifstream f(GetConfigDir() + "config.json");
+        std::string dir = GetConfigDir();
+        if (dir.empty()) { SetDefaultConfig(); return; }
+        std::ifstream f(dir + "config.json");
         if (!f.is_open()) { SetDefaultConfig(); return; }
         nlohmann::json j; f >> j; f.close();
         SetDefaultConfig();
