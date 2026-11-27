@@ -4,13 +4,29 @@
 - `:loader` (`loader/`) is the app: one screen (`LauncherActivity`), app id `zyn.bs`, and it owns the mod. `:core` (`core/`) is the renjana container engine vendored as an **Android library** (namespace `com.fesu.renjana`, no `applicationId`, no LAUNCHER entry).
 - The mod's native project **is** `loader/src/main/cpp` (`Android.mk`, `Application.mk`, sources). `loader/build.gradle` wires it with `externalNativeBuild { ndkBuild { path 'src/main/cpp/Android.mk' } }`, so `./gradlew :loader:assembleRelease` (or `assembleDebug` for a quick local build) compiles `libzyn-bs.so` and packages it in one step. There is no separate `jni/` directory, no standalone `ndk-build` invocation, and no `.so` copied in from outside — do not reintroduce one.
 - ABI is 32-bit end to end: `loader/src/main/cpp/Application.mk` `APP_ABI := armeabi-v7a` and `loader/build.gradle` `abiFilters 'armeabi-v7a'`. Shipping arm64-v8a lets the container pick a 64-bit process that can map neither the game's 32-bit `libGame.so` nor the mod.
-- NDK: one pinned version, `ndkVersion '27.3.13750724'` (r27d) in `loader/build.gradle`, overridable with `-PndkVersion=<v>`. Installed by the **SDK manager**, not by hand: CI runs `sdkmanager --install "ndk;<rev>"` (cached ~660 MB) and AGP downloads it automatically on a dev machine once the licence is accepted. There is no `-PndkPath` plumbing and no unpacked archive checked in.
-- CI: `.github/workflows/build.yml` — `sdkmanager` installs NDK r27d (cached), then a single `./gradlew :loader:assembleRelease` teed to `build.log`, a check that `lib/armeabi-v7a/libzyn-bs.so` and a `META-INF/*.RSA` signature are really inside the APK, then sends `bs-loader.apk` on success or `build.log` on failure (never both). `pipefail` is what makes a failed build fail the step — without it `tee` masks the status.
+- NDK: one pinned version, `ndkVersion '27.3.13750724'` (r27d) in `loader/build.gradle`, overridable with `-PndkVersion=<v>`. **Gradle installs it** — `android.builder.sdkDownload=true` in `gradle.properties` makes AGP fetch the platform, build-tools and the NDK itself, so CI has no SDK/NDK step and there is no `-PndkPath` plumbing or unpacked archive checked in. The first build after a version bump is slower while ~660 MB downloads.
+- CI: `.github/workflows/build.yml` — checkout, JDK 17, then straight to
+  `./gradlew :loader:assembleRelease` teed to `build.log` (Gradle supplies the
+  SDK/NDK). It verifies `lib/armeabi-v7a/libzyn-bs.so` and a `META-INF/*.RSA`
+  signature are really inside the APK, then sends `bs-loader.apk` on success or
+  `build.log` on failure (never both). `pipefail` is what makes a failed build
+  fail the step — without it `tee` masks the status.
 - Release is `minifyEnabled true` + `shrinkResources true`. That is only safe because `:core` declares `consumerProguardFiles 'proguard-rules.pro'`, which keeps the reflectively-reached engine pieces; `loader/proguard-rules.pro` covers only the loader's own classes. If a release-only crash appears, check the core rules before disabling minification.
-- **Signing**: `loader/keystore/{release.jks,keystore.properties}` are committed on purpose (recovered from `app/keystore/` at commit `4a4c256`). Same key + same `applicationId zyn.bs` is what lets a new build upgrade the installed app in place; a different key makes Android refuse the install as a signature mismatch. Never regenerate this keystore. `.gitignore` ignores `*.jks` but explicitly un-ignores these two paths.
-- `versionCode`/`versionName` continue from the previous release (`401` / `4.0.1` after `400` / `4.0.0`) so upgrades are accepted rather than rejected as downgrades. Bump both for a real release.
-- Do **not** install the NDK with a third-party setup action (e.g. `nttld/setup-ndk`): those unpack the archive with a JS extractor that drops symlinks, so `clang++` (a symlink to `clang`) is dangling and every compile fails with `clang++: No such file or directory`. `sdkmanager` (what CI uses now) recreates symlinks correctly; that is why it replaced the older manual `unzip` step.
-- CI: `.github/workflows/cleanup.yml` — weekly cron (Sun 03:00 UTC) that deletes artifacts older than 7 days, caches unused for 7 days, and all but the newest 5 runs per workflow. Manual run takes `keep_runs`, `artifact_days`, `cache_days`, `keep_ndk_cache`, `dry_run`. Only `completed` runs are deleted, so in-progress ones are never touched, and the `ndk-*` cache is protected by default (it saves a ~660 MB download).
+- **Signing**: `loader/build.gradle` reads **only** `loader/keystore/keystore.properties`
+  (`storeFile` / `storePassword` / `keyAlias` / `keyPassword`), the same shape the
+  previous app used — no env vars are consulted. The file and the `.jks` it names
+  are gitignored (`*.jks` / `*.keystore` / `keystore.properties`). CI recreates
+  both from the `SIGNING_*` secrets before the build and deletes them in an
+  `if: always()` step. Without them the release silently falls back to the debug
+  key, which is why the workflow fails early when a secret is missing. Same key +
+  same `applicationId zyn.bs` is what lets a new build upgrade the installed app
+  in place; a different key makes Android refuse the install as a signature
+  mismatch. Never regenerate this keystore.
+- `versionCode`/`versionName` continue from the previous release (`401` /
+  `4.0.1` after `400` / `4.0.0`) so upgrades are accepted rather than rejected
+  as downgrades. Bump both for a real release.
+- Do **not** install the NDK with a third-party setup action (e.g. `nttld/setup-ndk`): those unpack the archive with a JS extractor that drops symlinks, so `clang++` (a symlink to `clang`) is dangling and every compile fails with `clang++: No such file or directory`. AGP's own downloader (what we rely on) and `sdkmanager` both recreate symlinks correctly.
+- CI: `.github/workflows/cleanup.yml` — weekly cron (Sun 03:00 UTC) that deletes artifacts older than 7 days, caches unused for 7 days, and all but the newest 5 runs per workflow. Manual run takes `keep_runs`, `artifact_days`, `cache_days`, `keep_ndk_cache`, `dry_run`. Only `completed` runs are deleted, so in-progress ones are never touched. The `ndk-*` cache protection is now a no-op (the NDK comes from Gradle's cache) but harmless.
 
 ## Settings plumbing (easy to break silently)
 - The injected script (`loader/src/main/cpp/include/cpp/srcpy.cpp`, the `srcpy` raw string) reads **only** `data.json`. There is no UDP settings channel — do not add one back.

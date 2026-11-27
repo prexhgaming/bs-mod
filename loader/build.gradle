@@ -3,14 +3,44 @@ plugins {
     id 'org.jetbrains.kotlin.android'
 }
 
-// Signing material from the previous build of this app (app/keystore/ at commit
-// 4a4c256). Committed on purpose: the signature is what lets a new build upgrade
-// the installed app instead of landing beside it as a second `zyn.bs`. If this
-// keystore is lost, every user has to uninstall before installing again.
-def keystorePropertiesFile = file('keystore/keystore.properties')
+// Release signing is read from loader/keystore/keystore.properties — the same
+// shape the previous app used (storeFile / storePassword / keyAlias /
+// keyPassword), so nothing has to change for a local build. The file and the
+// .jks it points at are gitignored; CI recreates both from GitHub secrets
+// before the build and deletes them afterwards. No env vars are consulted here:
+// the properties file is the single source of truth, which keeps
+// `./gradlew :loader:assembleRelease` behaving identically locally and in CI.
+def keystoreDir = file('keystore')
+def keystorePropertiesFile = new File(keystoreDir, 'keystore.properties')
 def keystoreProperties = new Properties()
 if (keystorePropertiesFile.exists()) {
-    keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
+    keystorePropertiesFile.withInputStream { keystoreProperties.load(it) }
+}
+
+// storeFile may be absolute or relative to keystore/.
+def resolvedKeystoreFile = {
+    def name = keystoreProperties.getProperty('storeFile')
+    if (name == null || name.trim().isEmpty()) return null
+    def f = file(name.trim())
+    if (!f.isAbsolute()) f = new File(keystoreDir, name.trim())
+    return f.exists() ? f : null
+}
+
+def signingProp = { String key ->
+    def v = keystoreProperties.getProperty(key)
+    return (v != null && !v.trim().isEmpty()) ? v.trim() : null
+}
+
+def hasReleaseSigning = resolvedKeystoreFile() != null &&
+        signingProp('storePassword') != null &&
+        signingProp('keyAlias') != null &&
+        signingProp('keyPassword') != null
+
+if (hasReleaseSigning) {
+    logger.lifecycle("Release signing: ${resolvedKeystoreFile().name} (from keystore.properties)")
+} else {
+    logger.lifecycle('Release signing: none found — release will be debug-signed. ' +
+            'Provide loader/keystore/keystore.properties + the .jks it names.')
 }
 
 // The loader: one screen, one target game, one action. All the container
@@ -22,11 +52,9 @@ android {
     namespace 'zyn.bs'
     compileSdk 34
 
-    // One pinned NDK, installed by the SDK manager (CI runs
-    // `sdkmanager "ndk;<version>"`; Android Studio does the same on open) and
-    // downloaded by AGP automatically when the licence is accepted. No -PndkPath
-    // plumbing, no hand-unpacked archive. Override with -PndkVersion=<v> if a
-    // fork needs a different toolchain.
+    // One pinned NDK. AGP downloads it itself (android.builder.sdkDownload=true
+    // in gradle.properties), so there is no sdkmanager step in CI and no
+    // -PndkPath plumbing. Override with -PndkVersion=<v> for a different toolchain.
     ndkVersion project.findProperty('ndkVersion') ?: '27.3.13750724'
 
     defaultConfig {
@@ -64,11 +92,11 @@ android {
 
     signingConfigs {
         release {
-            if (keystorePropertiesFile.exists()) {
-                storeFile file("keystore/${keystoreProperties['storeFile']}")
-                storePassword keystoreProperties['storePassword']
-                keyAlias keystoreProperties['keyAlias']
-                keyPassword keystoreProperties['keyPassword']
+            if (hasReleaseSigning) {
+                storeFile resolvedKeystoreFile()
+                storePassword signingProp('storePassword')
+                keyAlias signingProp('keyAlias')
+                keyPassword signingProp('keyPassword')
             }
         }
     }
@@ -83,9 +111,7 @@ android {
             minifyEnabled true
             shrinkResources true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
-            signingConfig keystorePropertiesFile.exists()
-                ? signingConfigs.release
-                : signingConfigs.debug
+            signingConfig hasReleaseSigning ? signingConfigs.release : signingConfigs.debug
         }
         debug {
             minifyEnabled false

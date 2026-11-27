@@ -59,11 +59,9 @@ uploads/
 /core/build
 /loader/build
 
-# Signing material. The loader's keystore is committed on purpose so the APK
-# keeps the same signature as the previous release and upgrades in place — see
-# loader/keystore/keystore.properties. Any other keystore is still ignored.
+# Signing material — never commit. CI restores the release keystore from
+# SIGNING_KEYSTORE_BASE64 / SIGNING_* GitHub secrets into $RUNNER_TEMP and
+# deletes it after the build. Local release builds export the same env vars.
 *.jks
 *.keystore
 keystore.properties
-!loader/keystore/release.jks
-!loader/keystore/keystore.properties
