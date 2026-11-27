@@ -14,5 +14,9 @@
 
 ## Debugging the injected script
 - `@TRY` and `@HOOK` log rate-limited tracebacks via `_log_exc()` instead of `except: pass` — check logcat for `[NEXORA][ERR]` when a feature does nothing.
-- `_esp_diag()` / `_aim_diag()` print `[NEXORA][ESP]` / `[NEXORA][AIM]` lines every 2 s: config key count, `bESP_Skeleton`, entity counts, bones collected, aim gate state, and the final `Rotate()` values. These say which stage stops.
-- The C++ ESP drawing (`jni/ESP/ESP.h`) is byte-identical to the known-good backup apart from `SkeletonESP`, so a broken feature is almost always a settings/transport problem, not drawing code.
+- `_esp_diag()` / `_aim_diag()` print `[NEXORA][ESP]` / `[NEXORA][AIM]` lines every 2 s: config key count, `bESP_Skeleton`, entity counts, bones collected, aim gate state, and the final `Rotate()` values. These say which stage stops. Aim also logs `stage bone=<n> proj=<n> fov_out=<n> ok=<n>`: `ok=0` with `bone>0` means bone lookups are failing, `proj>0` means the projection is.
+
+## Bones: ESP and aim are separate pipelines
+- ESP skeleton collects bones only when `bESP_Skeleton` is on and the head is on screen; aim never uses that dict and does not need the toggle. Both depend on the engine's `entity.model.GetBoneWorldPosition(name)`.
+- Never write `GetBoneWorldPosition(a) or GetBoneWorldPosition(b)`: a bone the skeleton lacks **raises**, so the `or` fallback never runs and the caller's bare `except` drops the entity. Use `_aim_bone_pos()` (per-name guards, then `entity.position`), which is unit-tested in `uploads/test_aim_bone.py`.
+- `SkeletonESP` in `jni/ESP/ESP.h` differs from the backup on purpose: no 150 m cutoff, all 16 bone pairs at every range (the old 15/9/6 tiers dropped legs past 80 m), no per-endpoint `IsInBounds`, plus an outline pass and a filled head circle.

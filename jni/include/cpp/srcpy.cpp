@@ -514,6 +514,33 @@ _AIM_BONE_MAP = {
     3:'biped Spine', 4:'biped Pelvis',
 }
 
+def _aim_bone_pos(entity, bone_name):
+    """World position to aim at, robust against a bone this model lacks.
+
+    `GetBoneWorldPosition(a) or GetBoneWorldPosition(b)` is NOT a safe fallback:
+    when the first name is missing from the skeleton the engine raises instead of
+    returning None, so the second call never runs and the caller's bare `except`
+    drops the whole candidate. Every entity then gets skipped and aim targets
+    nothing - while ESP boxes still draw, because they only need 'biped Head'.
+    Each lookup gets its own guard, and a model with no usable bone still aims at
+    the entity origin rather than being discarded.
+    """
+    model = getattr(entity, 'model', None)
+    if model is not None:
+        for name in (bone_name, 'biped Head', 'biped Neck'):
+            if not name:
+                continue
+            try:
+                p = model.GetBoneWorldPosition(name)
+                if p:
+                    return p
+            except Exception:
+                continue
+    try:
+        return entity.position
+    except Exception:
+        return None
+
 _AIM_SNIPER_IDS  = frozenset({39,47,77,103,122,45,133})
 _AIM_SHOTGUN_IDS = frozenset({34,41,79,126})
 _AIM_SMG_IDS     = frozenset({2,65,67,90,110,129})
@@ -720,6 +747,7 @@ def AIMUpdate(*_, **__):
                 except: continue
             AIM_AutoTune(localEntity, temp_enemies)
         candidates = []
+        _st_bone = 0; _st_proj = 0; _st_fov = 0
         for entityId, entity in list(entities_dict.items()):
             try:
                 if not hasattr(entity, 'is_alive') or not isinstance(entity, CombatAvatar): continue
@@ -741,10 +769,10 @@ def AIMUpdate(*_, **__):
                     dist3d = Distance3D(lp if lp else cp, entity.position)
                 except: continue
                 if dist3d > max_dist: continue
-                try:
-                    bone_pos = entity.model.GetBoneWorldPosition(selected_bone) or entity.model.GetBoneWorldPosition('biped Head')
-                    if not bone_pos: continue
-                except: continue
+                bone_pos = _aim_bone_pos(entity, selected_bone)
+                if not bone_pos:
+                    _st_bone += 1
+                    continue
                 if check_vis:
                     try:
                         head_pos = entity.model.GetBoneWorldPosition('biped Head')
@@ -752,8 +780,12 @@ def AIMUpdate(*_, **__):
                     except: continue
                 try:
                     sp = WorldToScreenPoint(bone_pos)
-                    if not hasattr(sp, 'z') or sp.z <= 0.01: continue
-                except: continue
+                    if not hasattr(sp, 'z') or sp.z <= 0.01:
+                        _st_proj += 1
+                        continue
+                except Exception:
+                    _st_proj += 1
+                    continue
                 pred_x, pred_y = sp.x, sp.y
                 now_t = time.time()
                 prev = _aim_pos_track.get(entityId)
@@ -784,10 +816,14 @@ def AIMUpdate(*_, **__):
                 fov_dist = (dx*dx + dy*dy) ** 0.5
                 if fov_dist <= max_fov:
                     candidates.append((fov_dist, pred_x, pred_y, dist3d, entityId))
+                else:
+                    _st_fov += 1
             except: continue
         # Prune aim tracker to prevent unbounded growth
         aim_ids = {c[4] for c in candidates}
         _aim_pos_track = {k: v for k, v in _aim_pos_track.items() if k in aim_ids}
+        _aim_diag("stage bone=%d proj=%d fov_out=%d ok=%d bone_name=%s maxdist=%.0f fov=%.0f" % (
+            _st_bone, _st_proj, _st_fov, len(candidates), selected_bone, max_dist, max_fov))
         if not candidates:
             return
         candidates.sort(key=lambda x: x[0])
