@@ -205,6 +205,16 @@ abstract class StubActivity : Activity() {
             return
         }
 
+        // Honor the guest's declared screen orientation (e.g. Knives Out is
+        // landscape). The stub's own manifest has no screenOrientation, so without
+        // this the guest is handed a portrait window and its renderer can come up
+        // black / mis-sized instead of matching the game's real layout.
+        val guestScreenOrientation = guestActivityInfo?.screenOrientation
+            ?: android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+        if (guestScreenOrientation != android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED) {
+            setRequestedOrientation(guestScreenOrientation)
+        }
+
         try {
             androidx.appcompat.app.AppCompatDelegate.setCompatVectorFromResourcesEnabled(true)
         } catch (_: Throwable) {}

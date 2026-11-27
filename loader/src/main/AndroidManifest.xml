@@ -32,7 +32,6 @@
             android:configChanges="keyboard|keyboardHidden|orientation|screenSize|screenLayout|uiMode"
             android:exported="true"
             android:launchMode="singleTop"
-            android:screenOrientation="portrait"
             android:theme="@style/Theme.Launcher">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
