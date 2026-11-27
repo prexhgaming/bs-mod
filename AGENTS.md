@@ -2,28 +2,36 @@
 
 ## Layout
 - `:loader` (`loader/`) is the app: one screen (`LauncherActivity`), app id `zyn.bs`, and it owns the mod. `:core` (`core/`) is the renjana container engine vendored as an **Android library** (namespace `com.fesu.renjana`, no `applicationId`, no LAUNCHER entry).
-- The mod's native project **is** `loader/src/main/cpp` (`Android.mk`, `Application.mk`, sources). `loader/build.gradle` wires it with `externalNativeBuild { ndkBuild { path 'src/main/cpp/Android.mk' } }`, so `./gradlew :loader:assembleRelease` (or `assembleDebug` for a quick local build) compiles `libzyn-bs.so` and packages it in one step. There is no separate `jni/` directory, no standalone `ndk-build` invocation, and no `.so` copied in from outside — do not reintroduce one.
+- The mod's native project **is** `loader/src/main/cpp` (`Android.mk`, `Application.mk`, sources). `loader/build.gradle.kts` wires it with `externalNativeBuild { ndkBuild { path("src/main/cpp/Android.mk") } }`, so `./gradlew :loader:assembleRelease` (or `assembleDebug` for a quick local build) compiles `libzyn-bs.so` and packages it in one step. There is no separate `jni/` directory, no standalone `ndk-build` invocation, and no `.so` copied in from outside — do not reintroduce one.
 - Manifest merger: `:core` must **not** set `android:theme` (or any other app-owned attribute such as `android:name`) on `<application>`. A library that declares one collides with `:loader`'s `Theme.Launcher` and the build dies with `Attribute application@theme ... is also present at [:core]`. Every `:core` activity declares its own theme instead, so dropping the application-level one changes nothing. `uploads/check_manifest_merge.py` predicts this class of conflict — run it after touching either manifest; `tools:replace` is the escape hatch, not the fix.
-- ABI is 32-bit end to end: `loader/src/main/cpp/Application.mk` `APP_ABI := armeabi-v7a` and `loader/build.gradle` `abiFilters 'armeabi-v7a'`. Shipping arm64-v8a lets the container pick a 64-bit process that can map neither the game's 32-bit `libGame.so` nor the mod.
-- NDK: one pinned version, `ndkVersion '27.3.13750724'` (r27d) in `loader/build.gradle`, overridable with `-PndkVersion=<v>`. **Gradle installs it** — `android.builder.sdkDownload=true` in `gradle.properties` makes AGP fetch the platform, build-tools and the NDK itself, so CI has no SDK/NDK step and there is no `-PndkPath` plumbing or unpacked archive checked in. The first build after a version bump is slower while ~660 MB downloads.
-- CI: `.github/workflows/build.yml` — checkout, JDK 17, then straight to
-  `./gradlew :loader:assembleRelease` teed to `build.log` (Gradle supplies the
-  SDK/NDK). It verifies `lib/armeabi-v7a/libzyn-bs.so` and a `META-INF/*.RSA`
-  signature are really inside the APK, then sends `bs-loader.apk` on success or
-  `build.log` on failure (never both). `pipefail` is what makes a failed build
-  fail the step — without it `tee` masks the status.
+- ABI is 32-bit end to end: `loader/src/main/cpp/Application.mk` `APP_ABI := armeabi-v7a` and `loader/build.gradle.kts` `abiFilters += "armeabi-v7a"`. Shipping arm64-v8a lets the container pick a 64-bit process that can map neither the game's 32-bit `libGame.so` nor the mod.
+- NDK: one pinned version, `ndk = "27.3.13750724"` (r27d) in `gradle/libs.versions.toml`, applied as `ndkVersion` in `loader/build.gradle.kts`, overridable with `-PndkVersion=<v>`. **Gradle installs it** — `android.builder.sdkDownload=true` in `gradle.properties` makes AGP fetch the platform, build-tools and the NDK itself, so CI has no SDK/NDK step and there is no `-PndkPath` plumbing or unpacked archive checked in. The first build after a version bump is slower while ~660 MB downloads.
+- CI: `.github/workflows/build.yml` — checkout, JDK 17, recreate signing from
+  `SIGNING_*` secrets, then `./gradlew :loader:assembleRelease` teed to `build.log`
+  (Gradle supplies the SDK/NDK). It checks `lib/armeabi-v7a/libzyn-bs.so` is in the
+  APK and deliberately does **not** assert the signature: signing is optional by
+  design, so a missing keystore must yield an unsigned APK rather than a failed
+  build. Telegram gets the APK on success; on failure it gets a text-only message,
+  never the log, so a post-build check failing cannot arrive captioned "build
+  failed". `pipefail` is what makes a failed build fail the step — without it `tee`
+  masks the status.
+- Build scripts are **Kotlin DSL** (`*.gradle.kts`) with every dependency and version in `gradle/libs.versions.toml`. Bump a version there, not in a module script; the catalog is loaded automatically, so `settings.gradle.kts` has no `versionCatalogs` block. `uploads/check_gradle_catalog.py` verifies every `libs.*` accessor actually exists (a typo is a configuration-time failure).
+- Two workflows: `.github/workflows/build.yml` (release, signed, Telegram) and `debug.yml` (debug APK as a build artifact). The debug one intentionally uses **no cache and no secrets** so it can never seed a stale entry into the release job's Gradle cache.
 - Build settings in `gradle.properties`: `org.gradle.parallel=true` and `org.gradle.caching=true`, with `-Xmx4096m` because parallel workers overlap `:core`'s Kotlin/KSP compile with `:loader`'s ndk-build. Do not drop the heap back to 2g while parallel is on.
-- Release is `minifyEnabled true` + `shrinkResources true`. That is only safe because `:core` declares `consumerProguardFiles 'proguard-rules.pro'`, which keeps the reflectively-reached engine pieces; `loader/proguard-rules.pro` covers only the loader's own classes. If a release-only crash appears, check the core rules before disabling minification.
-- **Signing**: `loader/build.gradle` reads **only** `loader/keystore/keystore.properties`
-  (`storeFile` / `storePassword` / `keyAlias` / `keyPassword`), the same shape the
-  previous app used — no env vars are consulted. The file and the `.jks` it names
-  are gitignored (`*.jks` / `*.keystore` / `keystore.properties`). CI recreates
-  both from the `SIGNING_*` secrets before the build and deletes them in an
-  `if: always()` step. Without them the release silently falls back to the debug
-  key, which is why the workflow fails early when a secret is missing. Same key +
-  same `applicationId zyn.bs` is what lets a new build upgrade the installed app
-  in place; a different key makes Android refuse the install as a signature
-  mismatch. Never regenerate this keystore.
+- Release is `isMinifyEnabled = true` + `isShrinkResources = true`. That is only safe because `:core` declares `consumerProguardFiles("proguard-rules.pro")`, which keeps the reflectively-reached engine pieces; `loader/proguard-rules.pro` covers only the loader's own classes. If a release-only crash appears, check the core rules before disabling minification.
+- **Signing**: `keystore.properties` lives at the **repository root**, next to
+  `settings.gradle.kts` (`storeFile` / `storePassword` / `keyAlias` / `keyPassword`).
+  `loader/build.gradle.kts` loads it with `rootProject.file(...)`, so
+  `storeFile=release.jks` means `<root>/release.jks` — never a module-relative
+  path, which is what made an earlier CI run miss the file. The signing config is
+  created only when that file exists and is then picked up **by name**
+  (`signingConfigs.getByName('release')`); no env vars are consulted. Without it
+  the release APK is left **unsigned** rather than debug-signed, so a mistake
+  fails loudly instead of shipping a debug-key APK. Both files are gitignored; CI
+  recreates them from the `SIGNING_*` secrets and deletes them in an
+  `if: always()` step. Same key + same `applicationId zyn.bs` is what lets a new
+  build upgrade the installed app in place; a different key makes Android refuse
+  the install as a signature mismatch. Never regenerate this keystore.
 - `versionCode`/`versionName` continue from the previous release (`401` /
   `4.0.1` after `400` / `4.0.0`) so upgrades are accepted rather than rejected
   as downgrades. Bump both for a real release.

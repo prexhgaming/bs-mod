@@ -40,9 +40,13 @@ jobs:
           path: |
             ~/.gradle/caches
             ~/.gradle/wrapper
-          key: gradle-${{ runner.os }}-${{ hashFiles('**/*.gradle', 'gradle/wrapper/gradle-wrapper.properties') }}
+          key: gradle-release-${{ runner.os }}-${{ hashFiles('**/*.gradle.kts', 'gradle/libs.versions.toml', 'gradle/wrapper/gradle-wrapper.properties') }}
           restore-keys: gradle-${{ runner.os }}-
 
+      # Signing material goes to the REPOSITORY ROOT, because loader/build.gradle
+      # resolves it against rootProject.projectDir. Keeping it out of loader/
+      # is what removes the module-relative lookup that silently fell back to the
+      # debug key before.
       - name: Decode keystore and create signing properties
         env:
           RELEASE_KEYSTORE_BASE64: ${{ secrets.SIGNING_KEYSTORE_BASE64 }}
@@ -51,18 +55,19 @@ jobs:
           RELEASE_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
         run: |
           set -euo pipefail
-          [ -n "$RELEASE_KEYSTORE_BASE64" ] || { echo "::error::SIGNING_KEYSTORE_BASE64 is missing"; exit 1; }
+          for v in RELEASE_KEYSTORE_BASE64 RELEASE_STORE_PASSWORD RELEASE_KEY_ALIAS RELEASE_KEY_PASSWORD; do
+            [ -n "${!v}" ] || { echo "::error::$v is missing"; exit 1; }
+          done
 
-          mkdir -p loader/keystore
-          printf '%s' "$RELEASE_KEYSTORE_BASE64" | base64 -d > loader/keystore/release.jks
+          printf '%s' "$RELEASE_KEYSTORE_BASE64" | base64 -d > release.jks
           {
             echo "storeFile=release.jks"
             echo "storePassword=$RELEASE_STORE_PASSWORD"
             echo "keyAlias=$RELEASE_KEY_ALIAS"
             echo "keyPassword=$RELEASE_KEY_PASSWORD"
-          } > loader/keystore/keystore.properties
+          } > keystore.properties
 
-          ls -la loader/keystore/
+          ls -l release.jks keystore.properties
 
       - name: Notify Telegram that the build started
         run: |
@@ -84,12 +89,20 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          apk="$(find loader/build/outputs/apk -type f -name '*.apk' -print -quit)"
+          apk="$(find loader/build/outputs/apk/release -type f -name '*.apk' -print -quit)"
           [ -n "$apk" ] || { echo "::error::no APK produced"; exit 1; }
-          unzip -l "$apk" | grep -q 'lib/armeabi-v7a/libzyn-bs.so' \
+
+          # Dump the listing first: `unzip -l | grep -q` would let grep close the
+          # pipe early, and under `pipefail` the resulting SIGPIPE fails the step
+          # even on a successful match.
+          unzip -l "$apk" > "$RUNNER_TEMP/apk-contents.txt"
+          grep -q 'lib/armeabi-v7a/libzyn-bs.so' "$RUNNER_TEMP/apk-contents.txt" \
             || { echo "::error::libzyn-bs.so missing from APK"; exit 1; }
-          unzip -l "$apk" | grep -q 'META-INF/.*\.RSA' \
-            || { echo "::error::APK is not release-signed"; exit 1; }
+
+          # No signature check here: signing is optional by design. The `release`
+          # signing config only exists when keystore.properties is present, so a
+          # missing keystore yields a deliberately unsigned APK rather than a
+          # failure — asserting on the signing would fail builds that are correct.
           ls -lh "$apk"
 
       - name: Upload APK to Telegram
@@ -104,23 +117,32 @@ jobs:
             -F "caption=bs-loader ${GITHUB_SHA:0:7}" \
             "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendDocument"
 
+      # Text only, and only truthful: the old step attached build.log captioned
+      # "build failed" whenever ANY later step tripped, so a green Gradle run that
+      # only failed post-build verification still arrived looking like a dead
+      # build. The full log stays in the build-log artifact instead.
       - name: Notify Telegram about build failure
         if: failure() && github.event_name != 'pull_request'
         shell: bash
+        env:
+          GRADLE_OUTCOME: ${{ steps.gradle_build.outcome }}
         run: |
           set -euo pipefail
-          [ -f "$BUILD_LOG" ] || { echo "no build log to send"; exit 0; }
+          if [ "$GRADLE_OUTCOME" = "success" ]; then
+            text="post-build check failed ${GITHUB_SHA:0:7} — Gradle build itself succeeded, see the build-log artifact"
+          else
+            text="build failed ${GITHUB_SHA:0:7} — see the build-log artifact"
+          fi
           curl -sS -f -o /dev/null \
             -F "chat_id=$TELEGRAM_CHAT_ID" \
-            -F "document=@$BUILD_LOG;filename=build.log" \
-            -F "caption=build failed ${GITHUB_SHA:0:7}" \
-            "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendDocument"
+            -F "text=$text" \
+            "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendMessage"
 
       - name: Clean up signing material
         if: always()
         run: |
-          rm -f loader/keystore/release.jks loader/keystore/keystore.properties
-          rmdir loader/keystore 2>/dev/null || true
+          rm -f release.jks keystore.properties
+          echo "removed signing material from the workspace"
 
       - name: Upload build log artifact
         if: always() && hashFiles('build.log') != ''

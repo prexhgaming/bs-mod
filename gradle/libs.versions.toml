@@ -1,0 +1,91 @@
+[versions]
+agp = "8.5.0"
+kotlin = "1.9.20"
+ksp = "1.9.20-1.0.14"
+
+# SDK / toolchain
+compileSdk = "34"
+minSdk = "29"
+targetSdk = "34"
+ndk = "27.3.13750724"
+
+# Compose
+composeBom = "2023.10.01"
+composeCompiler = "1.5.4"
+
+# AndroidX
+coreKtx = "1.12.0"
+appcompat = "1.6.1"
+lifecycle = "2.6.2"
+activity = "1.8.0"
+navigationCompose = "2.7.4"
+room = "2.6.0"
+
+# Hooking / containers
+xposedApi = "82"
+pine = "0.3.0"
+pineXposed = "0.2.0"
+
+# Google
+playServicesAuth = "20.7.0"
+playServicesBase = "18.2.0"
+material = "1.11.0"
+
+# Misc
+gson = "2.10.1"
+coroutines = "1.7.3"
+
+[libraries]
+# Core
+androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
+androidx-appcompat = { group = "androidx.appcompat", name = "appcompat", version.ref = "appcompat" }
+androidx-activity-ktx = { group = "androidx.activity", name = "activity-ktx", version.ref = "activity" }
+androidx-activity-compose = { group = "androidx.activity", name = "activity-compose", version.ref = "activity" }
+androidx-navigation-compose = { group = "androidx.navigation", name = "navigation-compose", version.ref = "navigationCompose" }
+
+# Lifecycle
+androidx-lifecycle-runtime-ktx = { group = "androidx.lifecycle", name = "lifecycle-runtime-ktx", version.ref = "lifecycle" }
+androidx-lifecycle-viewmodel-ktx = { group = "androidx.lifecycle", name = "lifecycle-viewmodel-ktx", version.ref = "lifecycle" }
+androidx-lifecycle-viewmodel-compose = { group = "androidx.lifecycle", name = "lifecycle-viewmodel-compose", version.ref = "lifecycle" }
+
+# Compose. `androidx-compose-ui` is deliberately the only entry with that exact
+# prefix: no other key starts with `androidx-compose-ui`, so the generated
+# `libs.androidx.compose.ui` accessor can never collide with a group of the same
+# name. Same reasoning for `androidx-compose-tooling` / `androidx-compose-preview`.
+androidx-compose-bom = { group = "androidx.compose", name = "compose-bom", version.ref = "composeBom" }
+androidx-compose-ui = { group = "androidx.compose.ui", name = "ui" }
+androidx-compose-graphics = { group = "androidx.compose.ui", name = "ui-graphics" }
+androidx-compose-tooling = { group = "androidx.compose.ui", name = "ui-tooling" }
+androidx-compose-preview = { group = "androidx.compose.ui", name = "ui-tooling-preview" }
+androidx-compose-test-junit4 = { group = "androidx.compose.ui", name = "ui-test-junit4" }
+androidx-compose-test-manifest = { group = "androidx.compose.ui", name = "ui-test-manifest" }
+androidx-compose-material3 = { group = "androidx.compose.material3", name = "material3" }
+androidx-compose-material-icons-extended = { group = "androidx.compose.material", name = "material-icons-extended" }
+
+# Hooking — Xposed API is compileOnly; Pine provides it at runtime.
+xposed-api = { group = "de.robv.android.xposed", name = "api", version.ref = "xposedApi" }
+pine-core = { group = "top.canyie.pine", name = "core", version.ref = "pine" }
+pine-xposed = { group = "top.canyie.pine", name = "xposed", version.ref = "pineXposed" }
+
+# Google Play Services (compileOnly, virtualization targets)
+play-services-auth = { group = "com.google.android.gms", name = "play-services-auth", version.ref = "playServicesAuth" }
+play-services-base = { group = "com.google.android.gms", name = "play-services-base", version.ref = "playServicesBase" }
+
+# Material
+google-material = { group = "com.google.android.material", name = "material", version.ref = "material" }
+
+# Room
+androidx-room-runtime = { group = "androidx.room", name = "room-runtime", version.ref = "room" }
+androidx-room-ktx = { group = "androidx.room", name = "room-ktx", version.ref = "room" }
+androidx-room-compiler = { group = "androidx.room", name = "room-compiler", version.ref = "room" }
+
+# Misc
+gson = { group = "com.google.code.gson", name = "gson", version.ref = "gson" }
+kotlinx-coroutines-android = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-android", version.ref = "coroutines" }
+
+[plugins]
+android-application = { id = "com.android.application", version.ref = "agp" }
+android-library = { id = "com.android.library", version.ref = "agp" }
+kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
+kotlin-parcelize = { id = "org.jetbrains.kotlin.plugin.parcelize", version.ref = "kotlin" }
+ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }
