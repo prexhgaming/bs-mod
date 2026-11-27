@@ -1,0 +1,226 @@
+name: Cleanup
+
+on:
+  schedule:
+    # Weekly, Sunday 03:00 UTC. Scheduled workflows are disabled by GitHub after
+    # 60 days without repo activity; re-enable from the Actions tab if that
+    # happens.
+    - cron: '0 3 * * 0'
+  workflow_dispatch:
+    inputs:
+      keep_runs:
+        description: 'Runs to keep per workflow'
+        required: false
+        default: '5'
+      artifact_days:
+        description: 'Delete artifacts older than this many days'
+        required: false
+        default: '7'
+      cache_days:
+        description: 'Delete caches unused for this many days'
+        required: false
+        default: '7'
+      keep_ndk_cache:
+        description: 'Keep the NDK cache (avoids a 660 MB re-download)'
+        type: boolean
+        default: true
+      dry_run:
+        description: 'Report only, delete nothing'
+        type: boolean
+        default: false
+
+permissions:
+  actions: write
+  contents: read
+
+# Never run two cleanups at once.
+concurrency:
+  group: cleanup
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      KEEP_RUNS: ${{ inputs.keep_runs || '5' }}
+      ARTIFACT_DAYS: ${{ inputs.artifact_days || '7' }}
+      CACHE_DAYS: ${{ inputs.cache_days || '7' }}
+      # Careful with the boolean: GitHub's `a && b || c` falls through to `c`
+      # whenever `b` is falsy, so `&& inputs.keep_ndk_cache || 'true'` would
+      # force 'true' and make the unchecked box a no-op. Comparing against
+      # false first yields the string 'false', which is truthy.
+      KEEP_NDK_CACHE: ${{ (github.event_name == 'workflow_dispatch' && inputs.keep_ndk_cache == false) && 'false' || 'true' }}
+      DRY_RUN: ${{ inputs.dry_run || 'false' }}
+
+    steps:
+      - name: Delete old artifacts
+        run: |
+          set -euo pipefail
+
+          # ISO-8601 UTC with a Z suffix, so plain string comparison orders
+          # correctly against the API's created_at values.
+          cutoff=$(date -u -d "-${ARTIFACT_DAYS} days" +%Y-%m-%dT%H:%M:%SZ)
+          echo "Deleting artifacts created before $cutoff"
+
+          # One row per artifact: id, created_at, name. Expired artifacts are
+          # skipped: their bytes are already gone and the API call would 404.
+          gh api --paginate "/repos/$REPO/actions/artifacts?per_page=100" \
+            --jq '.artifacts[] | select(.expired == false)
+                  | "\(.id)\t\(.created_at)\t\(.name)"' \
+            > "$RUNNER_TEMP/artifacts.tsv"
+
+          total=$(wc -l < "$RUNNER_TEMP/artifacts.tsv")
+          deleted=0
+          failed=0
+
+          while IFS=$'\t' read -r id created name; do
+            [ -n "${id:-}" ] || continue
+            [[ "$created" < "$cutoff" ]] || continue
+
+            if [ "$DRY_RUN" = "true" ]; then
+              echo "[dry-run] would delete artifact '$name' (id=$id, $created)"
+              deleted=$((deleted + 1))
+              continue
+            fi
+
+            if gh api -X DELETE "/repos/$REPO/actions/artifacts/$id" >/dev/null 2>&1; then
+              echo "deleted artifact '$name' (id=$id, $created)"
+              deleted=$((deleted + 1))
+            else
+              echo "::warning::failed to delete artifact '$name' (id=$id)"
+              failed=$((failed + 1))
+            fi
+          done < "$RUNNER_TEMP/artifacts.tsv"
+
+          {
+            echo "### Artifacts"
+            echo ""
+            echo "- scanned: $total"
+            echo "- deleted: $deleted"
+            echo "- failed: $failed"
+            echo "- older than: $ARTIFACT_DAYS days"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Delete old caches
+        run: |
+          set -euo pipefail
+
+          cutoff=$(date -u -d "-${CACHE_DAYS} days" +%Y-%m-%dT%H:%M:%SZ)
+          echo "Deleting caches last used before $cutoff"
+
+          # last_accessed_at, not created_at: a cache that is restored on every
+          # build is still doing its job no matter how old it is.
+          gh api --paginate "/repos/$REPO/actions/caches?per_page=100" \
+            --jq '.actions_caches[]
+                  | "\(.id)\t\(.key)\t\(.last_accessed_at // .created_at)\t\(.size_in_bytes)"' \
+            > "$RUNNER_TEMP/caches.tsv"
+
+          total=$(wc -l < "$RUNNER_TEMP/caches.tsv")
+          deleted=0
+          failed=0
+          protected=0
+          freed=0
+
+          while IFS=$'\t' read -r id key accessed size; do
+            [ -n "${id:-}" ] || continue
+            [ -n "${accessed:-}" ] || continue
+            [[ "$accessed" < "$cutoff" ]] || continue
+
+            # The build job restores the ~660 MB NDK from this cache; dropping
+            # it makes the next build re-download the whole archive.
+            if [ "$KEEP_NDK_CACHE" = "true" ] && [[ "$key" == ndk-* ]]; then
+              echo "keeping NDK cache '$key' (protected)"
+              protected=$((protected + 1))
+              continue
+            fi
+
+            if [ "$DRY_RUN" = "true" ]; then
+              echo "[dry-run] would delete cache '$key' (id=$id, $accessed)"
+              deleted=$((deleted + 1))
+              freed=$((freed + size))
+              continue
+            fi
+
+            if gh api -X DELETE "/repos/$REPO/actions/caches/$id" >/dev/null 2>&1; then
+              echo "deleted cache '$key' (id=$id, $accessed)"
+              deleted=$((deleted + 1))
+              freed=$((freed + size))
+            else
+              echo "::warning::failed to delete cache '$key' (id=$id)"
+              failed=$((failed + 1))
+            fi
+          done < "$RUNNER_TEMP/caches.tsv"
+
+          freed_mb=$((freed / 1024 / 1024))
+
+          {
+            echo ""
+            echo "### Caches"
+            echo ""
+            echo "- scanned: $total"
+            echo "- deleted: $deleted"
+            echo "- failed: $failed"
+            echo "- protected (NDK): $protected"
+            echo "- freed: ${freed_mb} MiB"
+            echo "- unused for: $CACHE_DAYS days"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Delete old workflow runs
+        run: |
+          set -euo pipefail
+
+          # Newest first, then drop the first KEEP_RUNS of each workflow. Only
+          # completed runs are deleted: queued and in-progress runs (including
+          # this one) must survive.
+          gh run list --repo "$REPO" --limit 200 \
+            --json databaseId,status,createdAt,workflowName,headBranch \
+            > "$RUNNER_TEMP/runs.json"
+
+          jq -r --argjson keep "$KEEP_RUNS" '
+            group_by(.workflowName)
+            | map(sort_by(.createdAt) | reverse | .[$keep:] | .[])
+            | .[]
+            | select(.status == "completed")
+            | "\(.databaseId)\t\(.workflowName)\t\(.createdAt)\t\(.headBranch)"
+          ' "$RUNNER_TEMP/runs.json" > "$RUNNER_TEMP/stale.tsv"
+
+          total=$(wc -l < "$RUNNER_TEMP/stale.tsv")
+          echo "Found $total run(s) beyond the newest $KEEP_RUNS per workflow"
+
+          deleted=0
+          failed=0
+
+          while IFS=$'\t' read -r id workflow created branch; do
+            [ -n "${id:-}" ] || continue
+
+            if [ "$DRY_RUN" = "true" ]; then
+              echo "[dry-run] would delete run $id ($workflow on $branch, $created)"
+              deleted=$((deleted + 1))
+              continue
+            fi
+
+            # Deleting a run also removes the artifacts it produced, which is
+            # why this runs after the artifact sweep.
+            if gh api -X DELETE "/repos/$REPO/actions/runs/$id" >/dev/null 2>&1; then
+              echo "deleted run $id ($workflow on $branch, $created)"
+              deleted=$((deleted + 1))
+            else
+              echo "::warning::failed to delete run $id ($workflow)"
+              failed=$((failed + 1))
+            fi
+          done < "$RUNNER_TEMP/stale.tsv"
+
+          {
+            echo ""
+            echo "### Workflow runs"
+            echo ""
+            echo "- scanned: $total stale"
+            echo "- deleted: $deleted"
+            echo "- failed: $failed"
+            echo "- kept per workflow: $KEEP_RUNS"
+            echo "- mode: $([ "$DRY_RUN" = "true" ] && echo 'dry run' || echo 'delete')"
+          } >> "$GITHUB_STEP_SUMMARY"
