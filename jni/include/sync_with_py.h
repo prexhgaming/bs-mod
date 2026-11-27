@@ -46,6 +46,13 @@ static inline bool _swp_ratelimit(int ms) {
     return true;
 }
 
+// Defined later in draw.h (which is the only includer of this header). It
+// mkdir's the directory it returns and resolves to the app's internal data dir;
+// it returns an empty string until the activity is up, which is why every
+// caller below checks for that instead of writing to a guessed path.
+// Declared up here, not further down: everything below this point uses it.
+static inline std::string GetConfigDir();
+
 // Removes the previous run's snapshot so a stale file can never be mistaken for
 // live settings. Safe to call more than once: the unlink also clears the
 // writer's "payload unchanged" cache, so the next frame recreates the file with
@@ -83,12 +90,6 @@ static inline void sync_with_py_start_cleanup() {
     }
     std::thread(_swp_cleanup_thread).detach();
 }
-
-// Defined later in draw.h (which is the only includer of this header). It
-// mkdir's the directory it returns and resolves to the app's internal data dir;
-// it returns an empty string until the activity is up, which is why every
-// caller below checks for that instead of writing to a guessed path.
-static inline std::string GetConfigDir();
 
 // One path, always the app's internal dir (see GetConfigDir). No environment
 // override and no external-storage fallback: those let C++ and the script

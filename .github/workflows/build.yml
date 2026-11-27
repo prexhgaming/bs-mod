@@ -38,13 +38,20 @@ jobs:
           unzip -q "$RUNNER_TEMP/ndk.zip" -d "$RUNNER_TEMP"
           rm -f "$RUNNER_TEMP/ndk.zip"
 
+      # Everything is captured in build.log so a failure can be shipped as a
+      # file. `pipefail` matters: without it the pipeline's status is tee's,
+      # which is always 0, and a broken build would report success. `2>&1`
+      # matters too - the compiler writes its errors to stderr.
       - name: Build
+        id: build
         working-directory: jni
         run: |
+          set -euo pipefail
           "$RUNNER_TEMP/android-ndk-${NDK_VERSION}/ndk-build" -j"$(nproc)" \
             NDK_PROJECT_PATH=. \
             NDK_APPLICATION_MK=./Application.mk \
-            APP_BUILD_SCRIPT=./Android.mk
+            APP_BUILD_SCRIPT=./Android.mk 2>&1 \
+            | tee "$GITHUB_WORKSPACE/build.log"
 
       - name: Package
         run: |
@@ -57,18 +64,49 @@ jobs:
           name: libzyn-bs
           path: artifacts/libzyn-bs.zip
 
-      - name: Send to Telegram
+      # Skipped automatically on failure (default `success()`), so this only
+      # runs when the build actually produced a library.
+      - name: Upload build log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: build.log
+          if-no-files-found: warn
+
+      # One send, never both: the log when the build failed, the zip when it
+      # succeeded. Gated on the Build step's own outcome rather than the job's,
+      # so a packaging problem after a good build still delivers the log.
+      - name: Notify Telegram
         if: github.event_name != 'pull_request'
         env:
           TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           CHAT: ${{ secrets.TELEGRAM_CHAT_ID }}
+          BUILD_RESULT: ${{ steps.build.outcome }}
         run: |
-          if [ -z "$TOKEN" ] || [ -z "$CHAT" ]; then
+          set -euo pipefail
+
+          if [ -z "${TOKEN:-}" ] || [ -z "${CHAT:-}" ]; then
             echo "::error::TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID secrets are missing"
             exit 1
           fi
+
+          if [ "$BUILD_RESULT" = "success" ] && [ -f artifacts/libzyn-bs.zip ]; then
+            file="artifacts/libzyn-bs.zip"
+            caption="libzyn-bs ${GITHUB_SHA:0:7}"
+          else
+            file="$GITHUB_WORKSPACE/build.log"
+            caption="build failed ${GITHUB_SHA:0:7}"
+          fi
+
+          if [ ! -f "$file" ]; then
+            echo "::error::nothing to send: $file does not exist"
+            exit 1
+          fi
+
+          echo "sending $(basename "$file") ($(wc -c < "$file") bytes)"
           curl -sS -f -o /dev/null \
             -F "chat_id=$CHAT" \
-            -F "document=@artifacts/libzyn-bs.zip;filename=libzyn-bs.zip" \
-            -F "caption=libzyn-bs ${GITHUB_SHA:0:7}" \
+            -F "document=@$file;filename=$(basename "$file")" \
+            -F "caption=$caption" \
             "https://api.telegram.org/bot$TOKEN/sendDocument"
