@@ -21,14 +21,17 @@
 
     <!-- No android:name here. The loader app owns the Application class and
          extends RenjanaApplication, so the engine's singletons (database,
-         instanceManager, instanceLauncher, Pine init) still come up. -->
+         instanceManager, instanceLauncher, Pine init) still come up.
+         No android:theme either: a library must not dictate the app's theme, and
+         declaring one collides with the loader's Theme.Launcher at merge time
+         ("application@theme is also present at [:core]"). Activities below that
+         need the engine look set it explicitly. -->
     <application
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
-        android:theme="@style/Theme.Renjana"
         android:usesCleartextTraffic="true"
         tools:targetApi="31">
         
@@ -41,10 +44,13 @@
             android:label="@string/app_name"
             android:theme="@style/Theme.Renjana" />
 
-        <!-- Wrapper Activity for running guest apps -->
+        <!-- Wrapper Activity for running guest apps. Carries the engine theme
+             explicitly: :core no longer sets an application-level theme, and this
+             activity previously inherited it. -->
         <activity
             android:name=".core.WrapperActivity"
             android:exported="false"
+            android:theme="@style/Theme.Renjana"
             android:configChanges="orientation|screenSize|keyboardHidden|keyboard|screenLayout|smallestScreenSize|uiMode|layoutDirection|fontScale|locale"
             android:launchMode="standard"
             android:process=":container"
