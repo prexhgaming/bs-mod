@@ -1,0 +1,12 @@
+// Top-level build file. Versions mirror renjana upstream so the vendored :core
+// module compiles exactly as it did there (AGP 8.5.0 / Kotlin 1.9.20 / KSP pair).
+plugins {
+    id 'com.android.application' version '8.5.0' apply false
+    id 'com.android.library' version '8.5.0' apply false
+    id 'org.jetbrains.kotlin.android' version '1.9.20' apply false
+    id 'com.google.devtools.ksp' version '1.9.20-1.0.14' apply false
+}
+
+tasks.register('clean', Delete) {
+    delete rootProject.layout.buildDirectory
+}

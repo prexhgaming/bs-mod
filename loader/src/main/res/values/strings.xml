@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">BS-KILLER</string>
+    <string name="toolbar_subtitle">Sandbox · user %1$d</string>
+
+    <!-- ===================== Launcher ===================== -->
+    <string name="launcher_wordmark">BS·KILLER</string>
+    <string name="launcher_brand_sub">SANDBOX ENGINE</string>
+    <string name="launcher_tagline">IMMERSIVE SANDBOX EXPERIENCE</string>
+
+    <string name="launcher_status_ready">READY TO PLAY</string>
+    <string name="launcher_status_preparing">PREPARING</string>
+    <string name="launcher_status_missing">GAME NOT INSTALLED</string>
+
+    <string name="action_launch">LAUNCH GAME</string>
+    <string name="action_preparing">PREPARING</string>
+    <string name="action_install">INSTALL GAME</string>
+
+    <string name="launcher_hint_ready">Tap to enter the sandbox</string>
+    <string name="launcher_hint_preparing">Setting things up…</string>
+    <string name="launcher_hint_missing">Install %1$s on this device to begin</string>
+    <string name="launcher_footer">RENJANA CORE · v%1$s</string>
+    <string name="launcher_icon_desc">%1$s icon</string>
+    <string name="launcher_avatar">KO</string>
+
+    <!-- Provisioning stages. GMS runs silently in the background and is never
+         named on screen: the labels stay generic on purpose. -->
+    <string name="launcher_stage_waiting">Starting sandbox…</string>
+    <string name="launcher_stage_environment">Preparing environment…</string>
+    <string name="launcher_stage_game">Installing game files…</string>
+
+    <!-- Inline notice -->
+    <string name="notice_missing_title">%1$s not found</string>
+    <string name="notice_missing_body">Install the game from your store and reopen this launcher, or import its APK manually.</string>
+    <string name="notice_error_title">Setup interrupted</string>
+
+    <string name="menu_more">More</string>
+    <string name="dialog_clear_data_title">Clear game data?</string>
+    <string name="dialog_clear_data_body">Saves and settings for %1$s inside the sandbox will be deleted. This cannot be undone.</string>
+
+    <!-- ===================== Legacy screens ===================== -->
+    <!-- Actions -->
+    <string name="action_select_apk">Select APK</string>
+    <string name="action_retry">Retry</string>
+    <string name="action_refresh">Refresh</string>
+    <string name="action_clear_data">Clear data</string>
+    <string name="action_uninstall">Uninstall</string>
+    <string name="cancel">Cancel</string>
+
+    <!-- Progress -->
+    <string name="loading_waiting">Starting the sandbox…</string>
+    <string name="loading_game">Importing the game…</string>
+
+    <!-- Lists -->
+    <string name="list_title">Apps in sandbox</string>
+    <string name="empty_title">Nothing in the sandbox yet</string>
+    <string name="empty_hint">Install %1$s on this device, then reopen this app — it will be imported automatically.</string>
+    <string name="dialog_app_message">%1$s</string>
+
+    <!-- Messages -->
+    <string name="toast_launch_failed">Couldn\'t launch the game</string>
+    <string name="message_game_ready">%1$s is ready to play</string>
+    <string name="message_game_imported">Game imported successfully</string>
+    <string name="message_import_failed">Import failed</string>
+    <string name="message_data_cleared">Data cleared</string>
+    <string name="message_clear_failed">Couldn\'t clear data</string>
+    <string name="message_uninstalled">Removed from sandbox</string>
+    <string name="message_uninstall_failed">Couldn\'t uninstall</string>
+</resources>

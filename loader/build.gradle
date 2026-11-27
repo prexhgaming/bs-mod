@@ -1,0 +1,142 @@
+plugins {
+    id 'com.android.application'
+    id 'org.jetbrains.kotlin.android'
+}
+
+// Signing material from the previous build of this app (app/keystore/ at commit
+// 4a4c256). Committed on purpose: the signature is what lets a new build upgrade
+// the installed app instead of landing beside it as a second `zyn.bs`. If this
+// keystore is lost, every user has to uninstall before installing again.
+def keystorePropertiesFile = file('keystore/keystore.properties')
+def keystoreProperties = new Properties()
+if (keystorePropertiesFile.exists()) {
+    keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
+}
+
+// The loader: one screen, one target game, one action. All the container
+// machinery lives in :core; this module owns the app id, the cinematic launcher
+// UI, and the mod itself — src/main/cpp is the ndk-build project that produces
+// libzyn-bs.so, so a plain `assembleRelease` builds and packages the mod with no
+// separate step and no .so copied in from outside.
+android {
+    namespace 'zyn.bs'
+    compileSdk 34
+
+    // One pinned NDK, installed by the SDK manager (CI runs
+    // `sdkmanager "ndk;<version>"`; Android Studio does the same on open) and
+    // downloaded by AGP automatically when the licence is accepted. No -PndkPath
+    // plumbing, no hand-unpacked archive. Override with -PndkVersion=<v> if a
+    // fork needs a different toolchain.
+    ndkVersion project.findProperty('ndkVersion') ?: '27.3.13750724'
+
+    defaultConfig {
+        applicationId "zyn.bs"
+        minSdk 29
+        targetSdk 34
+        // Kept in step with the previous release (versionCode 400 / 4.0.0) so an
+        // upgrade replaces the installed app rather than being rejected as a
+        // downgrade. Bump both for a real release.
+        versionCode 401
+        versionName "4.0.1"
+
+        // The UI is English-only: dropping the locales appcompat/material ship
+        // removes a few hundred KB of strings/NOTICE data from the APK.
+        resourceConfigurations += ['en']
+
+        // 32-bit only, and this is load-bearing: the target game ships an
+        // armeabi-v7a libGame.so and the mod is built for armeabi-v7a too.
+        // Shipping arm64-v8a would let the container pick a 64-bit process that
+        // can map neither library. Keep in sync with APP_ABI in
+        // src/main/cpp/Application.mk.
+        ndk {
+            abiFilters 'armeabi-v7a'
+            debugSymbolLevel 'none'
+        }
+    }
+
+    // Android.mk / Application.mk live together under src/main/cpp, which is
+    // also where ndk-build expects them, so nothing has to be passed in.
+    externalNativeBuild {
+        ndkBuild {
+            path 'src/main/cpp/Android.mk'
+        }
+    }
+
+    signingConfigs {
+        release {
+            if (keystorePropertiesFile.exists()) {
+                storeFile file("keystore/${keystoreProperties['storeFile']}")
+                storePassword keystoreProperties['storePassword']
+                keyAlias keystoreProperties['keyAlias']
+                keyPassword keystoreProperties['keyPassword']
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            // Safe to shrink because :core ships its own consumer rules
+            // (consumerProguardFiles in core/build.gradle) that keep the
+            // reflectively-reached pieces: stub activities, hook callbacks, Pine,
+            // Room entities, models, GMS. R8 then trims our code and the unused
+            // library code on top.
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            signingConfig keystorePropertiesFile.exists()
+                ? signingConfigs.release
+                : signingConfigs.debug
+        }
+        debug {
+            minifyEnabled false
+            shrinkResources false
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    kotlinOptions {
+        jvmTarget = '17'
+    }
+    buildFeatures {
+        viewBinding true
+        buildConfig true
+    }
+    packaging {
+        jniLibs {
+            // The mod is loaded with System.loadLibrary from this process's
+            // nativeLibraryDir, and it patches its own mapping, so it must be a
+            // real extracted file rather than an entry inside the APK.
+            useLegacyPackaging true
+        }
+        resources {
+            excludes += [
+                    'META-INF/AL2.0',
+                    'META-INF/LGPL2.1',
+                    'META-INF/*.kotlin_module',
+                    'META-INF/*.version',
+                    'META-INF/DEPENDENCIES',
+                    'META-INF/LICENSE*',
+                    'META-INF/NOTICE*',
+                    'kotlin/**',
+                    'DebugProbesKt.bin'
+            ]
+        }
+    }
+}
+
+dependencies {
+    implementation project(':core')
+
+    implementation 'androidx.core:core-ktx:1.12.0'
+    implementation 'androidx.appcompat:appcompat:1.6.1'
+    implementation 'com.google.android.material:material:1.11.0'
+    implementation 'androidx.activity:activity-ktx:1.8.0'
+    implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.6.2'
+    implementation 'androidx.lifecycle:lifecycle-viewmodel-ktx:2.6.2'
+    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3'
+
+    testImplementation 'junit:junit:4.13.2'
+}

@@ -1,4 +1,4 @@
-name: Build lib
+name: Build loader
 
 on:
   push:
@@ -7,7 +7,9 @@ on:
   workflow_dispatch:
 
 env:
-  NDK_VERSION: r27d
+  # NDK r27d. Must match the `ndkVersion` in loader/build.gradle; that file reads
+  # -PndkVersion if given, so this stays the single place CI pins it.
+  NDK_REVISION: 27.3.13750724
 
 jobs:
   build:
@@ -16,56 +18,108 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # The NDK is installed by unpacking the official archive with `unzip`.
-      # Do NOT replace this with a setup action: those extract the zip through a
-      # JS extractor that does not recreate symlinks, so clang++ (a symlink to
-      # clang) ends up dangling and every compile dies with
-      # "clang++: No such file or directory" even though the directory exists.
-      # `unzip` creates the symlinks, which is why this path builds reliably.
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      # Installs cmdline-tools (so `sdkmanager` is on PATH) and accepts the SDK
+      # licences, which is what lets the NDK install below run unattended.
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      # Resolve the SDK root explicitly instead of relying on the action's env
+      # export being visible to `${{ env.* }}` in a later step's `with:`.
+      - name: Resolve SDK root
+        id: sdk
+        run: |
+          set -euo pipefail
+          root="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-$HOME/.android/sdk}}"
+          echo "root=$root" >> "$GITHUB_OUTPUT"
+          echo "SDK root: $root"
+
+      # The NDK is installed by the official SDK manager, the same way Android
+      # Studio does it. That matters: the archive contains symlinks (clang++ ->
+      # clang) and sdkmanager recreates them. Some third-party "setup-ndk"
+      # actions extract through a JS zip reader that drops symlinks, leaving
+      # clang++ dangling so every compile dies with
+      # "clang++: No such file or directory". sdkmanager does not have that bug.
+      #
+      # Cached because the download is ~660 MB and the toolchain only changes
+      # when NDK_REVISION does.
       - name: Cache NDK
-        id: cache
+        id: ndk-cache
         uses: actions/cache@v4
         with:
-          path: ${{ runner.temp }}/android-ndk-${{ env.NDK_VERSION }}
-          key: ndk-${{ env.NDK_VERSION }}-${{ runner.os }}
+          path: ${{ steps.sdk.outputs.root }}/ndk/${{ env.NDK_REVISION }}
+          key: ndk-${{ env.NDK_REVISION }}-${{ runner.os }}
 
-      - name: Install NDK ${{ env.NDK_VERSION }}
-        if: steps.cache.outputs.cache-hit != 'true'
+      - name: Install NDK ${{ env.NDK_REVISION }}
+        if: steps.ndk-cache.outputs.cache-hit != 'true'
         run: |
-          curl -fsSL --retry 3 --retry-delay 5 \
-            -o "$RUNNER_TEMP/ndk.zip" \
-            "https://dl.google.com/android/repository/android-ndk-${NDK_VERSION}-linux.zip"
-          unzip -q "$RUNNER_TEMP/ndk.zip" -d "$RUNNER_TEMP"
-          rm -f "$RUNNER_TEMP/ndk.zip"
+          set -euo pipefail
+          # Licences are already accepted by setup-android; </dev/null stops
+          # sdkmanager blocking on a prompt. Deliberately NOT `yes |`: under
+          # `pipefail`, `yes` dying from SIGPIPE (141) once sdkmanager exits
+          # would fail the step on an otherwise successful install.
+          sdkmanager --install "ndk;${NDK_REVISION}" < /dev/null
+          sdkmanager --list_installed | grep "ndk;${NDK_REVISION}"
 
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('**/*.gradle', 'gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: gradle-${{ runner.os }}-
+
+      # One build. The mod's ndk-build project lives in loader/src/main/cpp and
+      # runs through externalNativeBuild, so this compiles libzyn-bs.so and
+      # packages it into the APK — there is no separate native step any more.
+      # The NDK is found through ndkVersion, so nothing is passed in here.
+      #
       # Everything is captured in build.log so a failure can be shipped as a
       # file. `pipefail` matters: without it the pipeline's status is tee's,
       # which is always 0, and a broken build would report success. `2>&1`
-      # matters too - the compiler writes its errors to stderr.
-      - name: Build
-        id: build
-        working-directory: jni
+      # matters too - both clang and Gradle write their errors to stderr.
+      #
+      # No signing secrets needed: loader/keystore/ is committed so the APK keeps
+      # the same signature as the previous release and upgrades in place.
+      - name: Build release APK
+        id: apk
         run: |
           set -euo pipefail
-          "$RUNNER_TEMP/android-ndk-${NDK_VERSION}/ndk-build" -j"$(nproc)" \
-            NDK_PROJECT_PATH=. \
-            NDK_APPLICATION_MK=./Application.mk \
-            APP_BUILD_SCRIPT=./Android.mk 2>&1 \
+          chmod +x gradlew
+          ./gradlew :loader:assembleRelease --no-daemon --stacktrace 2>&1 \
             | tee "$GITHUB_WORKSPACE/build.log"
 
-      - name: Package
+      - name: Package APK
         run: |
+          set -euo pipefail
           mkdir -p artifacts
-          zip -j artifacts/libzyn-bs.zip jni/libs/armeabi-v7a/libzyn-bs.so
-          ls -lh artifacts/libzyn-bs.zip
+          cp loader/build/outputs/apk/release/loader-release.apk artifacts/bs-loader.apk
+
+          # Proves the mod actually made it in; a missing .so would otherwise
+          # only surface as a silent System.loadLibrary failure on device.
+          unzip -l artifacts/bs-loader.apk | grep -q 'lib/armeabi-v7a/libzyn-bs.so' \
+            || { echo "::error::libzyn-bs.so is missing from the APK"; exit 1; }
+          unzip -l artifacts/bs-loader.apk | grep 'lib/armeabi-v7a/libzyn-bs.so'
+
+          # Proves it was signed with the committed release key and not with the
+          # debug key (which would break in-place upgrades).
+          unzip -l artifacts/bs-loader.apk | grep -q 'META-INF/.*\.RSA' \
+            || { echo "::error::APK is not signed with a release key"; exit 1; }
+
+          ls -lh artifacts/
 
       - uses: actions/upload-artifact@v4
         with:
-          name: libzyn-bs
-          path: artifacts/libzyn-bs.zip
+          name: bs-loader
+          path: artifacts/bs-loader.apk
 
-      # Skipped automatically on failure (default `success()`), so this only
-      # runs when the build actually produced a library.
+      # Skipped automatically on success (default `success()`).
       - name: Upload build log
         if: failure()
         uses: actions/upload-artifact@v4
@@ -74,15 +128,15 @@ jobs:
           path: build.log
           if-no-files-found: warn
 
-      # One send, never both: the log when the build failed, the zip when it
-      # succeeded. Gated on the Build step's own outcome rather than the job's,
-      # so a packaging problem after a good build still delivers the log.
+      # One send, never both: the log when the build failed, the APK when it
+      # succeeded. Gated on the build step's own outcome, so a packaging problem
+      # after a good compile still delivers the log rather than a stale APK.
       - name: Notify Telegram
         if: github.event_name != 'pull_request'
         env:
           TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           CHAT: ${{ secrets.TELEGRAM_CHAT_ID }}
-          BUILD_RESULT: ${{ steps.build.outcome }}
+          APK_RESULT: ${{ steps.apk.outcome }}
         run: |
           set -euo pipefail
 
@@ -91,9 +145,9 @@ jobs:
             exit 1
           fi
 
-          if [ "$BUILD_RESULT" = "success" ] && [ -f artifacts/libzyn-bs.zip ]; then
-            file="artifacts/libzyn-bs.zip"
-            caption="libzyn-bs ${GITHUB_SHA:0:7}"
+          if [ "$APK_RESULT" = "success" ] && [ -f artifacts/bs-loader.apk ]; then
+            file="artifacts/bs-loader.apk"
+            caption="bs-loader ${GITHUB_SHA:0:7}"
           else
             file="$GITHUB_WORKSPACE/build.log"
             caption="build failed ${GITHUB_SHA:0:7}"
