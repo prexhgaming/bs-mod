@@ -26,6 +26,11 @@
 - `versionCode`/`versionName` continue from the previous release (`401` /
   `4.0.1` after `400` / `4.0.0`) so upgrades are accepted rather than rejected
   as downgrades. Bump both for a real release.
+- `:core` is a **library**, so AGP does not generate `BuildConfig.VERSION_NAME` /
+  `VERSION_CODE` / `APPLICATION_ID` — referencing them is a compile error (the
+  split hit this once in `SettingsScreen`). Read the app version at runtime via
+  `Utils.appVersionName(context)`; `uploads/check_modules.py` now rejects those
+  fields in `:core`.
 - Do **not** install the NDK with a third-party setup action (e.g. `nttld/setup-ndk`): those unpack the archive with a JS extractor that drops symlinks, so `clang++` (a symlink to `clang`) is dangling and every compile fails with `clang++: No such file or directory`. AGP's own downloader (what we rely on) and `sdkmanager` both recreate symlinks correctly.
 - CI: `.github/workflows/cleanup.yml` — weekly cron (Sun 03:00 UTC) that deletes artifacts older than 7 days, caches unused for 7 days, and all but the newest 5 runs per workflow. Manual run takes `keep_runs`, `artifact_days`, `cache_days`, `keep_ndk_cache`, `dry_run`. Only `completed` runs are deleted, so in-progress ones are never touched. The `ndk-*` cache protection is now a no-op (the NDK comes from Gradle's cache) but harmless.
 

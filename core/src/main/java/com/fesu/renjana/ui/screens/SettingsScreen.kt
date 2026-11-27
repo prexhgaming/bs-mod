@@ -35,7 +35,7 @@ import com.fesu.renjana.ui.theme.AccentBlue
 import com.fesu.renjana.ui.theme.AccentGreen
 import com.fesu.renjana.ui.theme.AccentOrange
 import com.fesu.renjana.ui.theme.AccentPink
-import com.fesu.renjana.BuildConfig
+import com.fesu.renjana.utils.Utils
 import com.fesu.renjana.ui.theme.AccentPurple
 
 data class AccentOption(val name: String, val color: Color)
@@ -188,7 +188,7 @@ fun SettingsScreen(
         // ── About ──
         SectionTitle("About")
         SettingsCard {
-            SettingsInfoRow(icon = Icons.Filled.Info, title = "Version", value = BuildConfig.VERSION_NAME)
+            SettingsInfoRow(icon = Icons.Filled.Info, title = "Version", value = Utils.appVersionName(RenjanaApplication.get()))
         }
         Spacer(modifier = Modifier.height(8.dp))
         SettingsCard {

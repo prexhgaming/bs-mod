@@ -1,11 +1,31 @@
 package com.fesu.renjana.utils
 
+import android.content.Context
 import java.util.UUID
 
 /**
  * Utility functions for Renjana
  */
 object Utils {
+
+    /**
+     * Version name of the running app, e.g. "4.0.1".
+     *
+     * Read from PackageManager instead of BuildConfig: `:core` is a library
+     * module and AGP does not generate VERSION_NAME for libraries. Resolving it
+     * at runtime also keeps the value honest for whichever app embeds this
+     * library, rather than freezing a number into the engine.
+     */
+    fun appVersionName(context: Context): String {
+        return try {
+            context.packageManager
+                .getPackageInfo(context.packageName, 0)
+                .versionName
+                ?: "unknown"
+        } catch (e: Exception) {
+            "unknown"
+        }
+    }
     
     /**
      * Generate a unique ID
