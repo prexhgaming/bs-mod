@@ -374,30 +374,44 @@ namespace WeaponESP {
 namespace SkeletonESP {
     static void Draw(ImDrawList* dl, const Entity& e) {
         if (!s_ff.bSkeleton) return;
-        if (e.distance > 150.f) return;
-        
-        // 🔥 JELAS: Terlihat = Putih Tebal, Di balik tembok = Abu-abu Tipis & Transparan
-        ImU32 col = e.is_visible ? Colors::COLOR_VISIBLE : Colors::COLOR_HIDDEN;
-        float thick = e.is_visible ? 1.5f : 1.0f;
-        
+        // No distance cutoff here: DrawAll already drops anything beyond
+        // fMaxDist, and the old 150 m return meant the skeleton vanished at
+        // exactly the ranges most fights happen at.
+
+        // Terlihat = Putih Tebal, Di balik tembok = Abu-abu Tipis & Transparan
+        ImU32 col   = e.is_visible ? Colors::COLOR_VISIBLE : Colors::COLOR_HIDDEN;
+        ImU32 dark  = e.is_visible ? IM_COL32(0, 0, 0, 140) : IM_COL32(0, 0, 0, 90);
+        float thick = e.is_visible ? 1.6f : 1.2f;
+
         static constexpr BoneIdx full[][2] = {
-            {BONE_HEAD, BONE_NECK}, {BONE_NECK, BONE_SPINE}, {BONE_SPINE, BONE_SPINE1}, 
+            {BONE_HEAD, BONE_NECK}, {BONE_NECK, BONE_SPINE}, {BONE_SPINE, BONE_SPINE1},
             {BONE_SPINE1, BONE_PELVIS},
             {BONE_NECK, BONE_LSHOULDER}, {BONE_LSHOULDER, BONE_LELBOW}, {BONE_LELBOW, BONE_LHAND},
             {BONE_NECK, BONE_RSHOULDER}, {BONE_RSHOULDER, BONE_RELBOW}, {BONE_RELBOW, BONE_RHAND},
             {BONE_PELVIS, BONE_LTHIGH}, {BONE_LTHIGH, BONE_LKNEE}, {BONE_LKNEE, BONE_LFOOT},
             {BONE_PELVIS, BONE_RTHIGH}, {BONE_RTHIGH, BONE_RKNEE}, {BONE_RKNEE, BONE_RFOOT},
         };
-        int cnt = e.distance < 40.f ? 15 : e.distance < 80.f ? 9 : 6;
+        // Always draw the whole body. The old tiered version (15/9/6 segments)
+        // dropped the legs past 80 m and the arms past 40 m, which is what made
+        // the skeleton look like a broken stick figure.
+        constexpr int total = (int)(sizeof(full) / sizeof(full[0]));
+
         ImVec2 a, b;
-        for (int i = 0; i < cnt; i++) {
-            if (!e.GetBonePosition(full[i][0], a) || !Utils::IsInBounds(a)) continue;
-            if (!e.GetBonePosition(full[i][1], b) || !Utils::IsInBounds(b)) continue;
-            Utils::Line(dl, a, b, col, thick);
+        for (int i = 0; i < total; i++) {
+            if (!e.GetBonePosition(full[i][0], a)) continue;
+            if (!e.GetBonePosition(full[i][1], b)) continue;
+            // Deliberately no IsInBounds check: rejecting a segment as soon as
+            // one end leaves the screen made limbs disappear at the edges.
+            if (!Utils::IsValidVec2(a) || !Utils::IsValidVec2(b)) continue;
+            Utils::Line(dl, a, b, dark, thick + 1.8f);   // outline for contrast
+            Utils::Line(dl, a, b, col,  thick);
         }
+
         ImVec2 headP;
-        if (e.GetBonePosition(BONE_HEAD, headP) && Utils::IsInBounds(headP)) {
-            Utils::RectFilled(dl, ImVec2(headP.x - 2.f, headP.y - 2.f), ImVec2(headP.x + 2.f, headP.y + 2.f), col);
+        if (e.GetBonePosition(BONE_HEAD, headP) && Utils::IsValidVec2(headP)) {
+            float r = e.distance < 40.f ? 3.f : 2.f;
+            dl->AddCircleFilled(headP, r + 1.4f, dark, 12);
+            dl->AddCircleFilled(headP, r, col, 12);
         }
     }
 }

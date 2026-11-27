@@ -175,6 +175,26 @@ def _wep_name(equip_id):
         pass
     return 'Punk'
 
+_exc_last = {}
+
+def _log_exc(tag):
+    """Rate-limited exception report.
+
+    TRY/HOOK used to swallow everything with a bare `except: pass`, so a
+    NameError or a changed engine attribute looked exactly like "the feature is
+    off". One line per tag per 5 s keeps logcat readable.
+    """
+    try:
+        now = time.time()
+        if now - _exc_last.get(tag, 0.0) < 5.0:
+            return
+        _exc_last[tag] = now
+        import traceback
+        tb = traceback.format_exc().replace('\n', ' | ')
+        print("[NEXORA][ERR][%s] %s" % (tag, tb[:400]))
+    except Exception:
+        pass
+
 def HOOK(clazz, bLog=False, _name=None):
     def decorator(func, _name=_name):
         name = func.__name__
@@ -184,8 +204,9 @@ def HOOK(clazz, bLog=False, _name=None):
         def wrapper(*args, **kwargs):
             try:
                 return func(*args, **kwargs)
-            except:
-                pass
+            except Exception:
+                _log_exc(name)
+                return None
         setattr(clazz, name, wrapper)
         return func
     return decorator
@@ -196,8 +217,9 @@ def TRY(_func=None, *, bLog=False):
         def wrapper(*args, **kwargs):
             try:
                 return original(*args, **kwargs)
-            except:
-                pass
+            except Exception:
+                _log_exc(original.__name__)
+                return None
         return wrapper
     return decorator(_func) if _func else decorator
 
@@ -252,6 +274,49 @@ def _get_item_id(entity):
             continue
     return 0
 
+# ============================================================
+# 🔥 DIAGNOSTICS
+# ============================================================
+# Both updates are wrapped in @TRY / bare `except: pass`, so a NameError or a
+# missing attribute is completely invisible - the feature just does nothing.
+# These lines go to logcat once every couple of seconds and are the fastest way
+# to see which stage is failing.
+_dbg_last_esp = 0.0
+_dbg_last_aim = 0.0
+
+def _dbg(tag, msg):
+    try:
+        print("[NEXORA][%s] %s" % (tag, msg))
+    except Exception:
+        pass
+
+def _esp_diag(entities):
+    global _dbg_last_esp
+    now = time.time()
+    if now - _dbg_last_esp < 2.0:
+        return
+    _dbg_last_esp = now
+    with_bones = 0
+    on_screen = 0
+    for e in entities:
+        if not isinstance(e, dict):
+            continue
+        if len(e.get('bones') or {}) > 1:
+            with_bones += 1
+        if e.get('is_on_screen'):
+            on_screen += 1
+    _dbg("ESP", "keys=%d skel=%s maxdist=%s ents=%d on_screen=%d with_bones=%d" % (
+        len(sync_attrs), sync_attrs.get('bESP_Skeleton'),
+        sync_attrs.get('fESP_MaxDistance'), len(entities), on_screen, with_bones))
+
+def _aim_diag(msg):
+    global _dbg_last_aim
+    now = time.time()
+    if now - _dbg_last_aim < 2.0:
+        return
+    _dbg_last_aim = now
+    _dbg("AIM", msg)
+
 @TRY
 def EspUpdate(*_, **__):
     if not sync_attrs.get('bESP', True):
@@ -286,7 +351,10 @@ def EspUpdate(*_, **__):
         except:
             return None
 
-    _MAX_DIST = float(sync_attrs.get('fESP_MaxDist', 500.0))
+    # Must match the key C++ actually writes (fESP_MaxDistance in draw.h /
+    # ESP.h). The old spelling 'fESP_MaxDist' never existed in the config, so
+    # the script always fell back to its own default.
+    _MAX_DIST = float(sync_attrs.get('fESP_MaxDistance', 500.0))
     entities = []
     _bLootESP = sync_attrs.get('bLootESP', False)
     _LOOT_MAX_DIST = float(sync_attrs.get('fLootESP_MaxDist', 120.0))
@@ -400,6 +468,8 @@ def EspUpdate(*_, **__):
             entities.append(entry)
         except:
             continue
+
+    _esp_diag(entities)
 
     try:
         _cam_euler = _cam.euler_angles if hasattr(_cam, 'euler_angles') else None
@@ -561,15 +631,20 @@ def AIMUpdate(*_, **__):
             return
         trigger = sync_attrs.get('iAIM_Trigger', 2)
         # Menu: 0=OFF, 1=On Shoot, 2=On ADS, 3=Both.
-        # getattr, not attribute access: these two flags do not exist on every
-        # avatar subclass, and an AttributeError here unwinds the whole update
-        # into the outer handler - which looks exactly like "aim does nothing".
+        # These flags do not exist on every avatar subclass, so they are read
+        # defensively - and an *unreadable* flag never closes the gate. Gating on
+        # a state we cannot read is indistinguishable from "aim is broken".
+        _has_shoot   = hasattr(localEntity, 'is_shooting')
+        _has_ads     = hasattr(localEntity, 'is_ads')
         _is_shooting = bool(getattr(localEntity, 'is_shooting', False))
         _is_ads      = bool(getattr(localEntity, 'is_ads', False))
-        if trigger == 0: return                                    # OFF
-        if trigger == 1 and not _is_shooting: return               # On Shoot
-        if trigger == 2 and not (_is_ads or _is_shooting): return  # On ADS
-        # trigger == 3 (Both): no gate, aim continuously
+        _firing      = (_is_shooting or _is_ads) or not (_has_shoot and _has_ads)
+        if trigger == 0:
+            _aim_diag("gate OFF (trigger=0)")
+            return
+        if trigger in (1, 2) and not _firing:
+            _aim_diag("gate wait trig=%s ads=%s shoot=%s" % (trigger, _is_ads, _is_shooting))
+            return
         if not FpsPlacerInstance:
             # Hook-injected instance is primary; fall back to the camera's
             # fps_placer if the OnStaticTick hook never fired.
@@ -593,6 +668,8 @@ def AIMUpdate(*_, **__):
                     return
             except:
                 return
+        _aim_diag("run trig=%s ads=%s shoot=%s fpp=%s euler=%s" % (
+            trigger, _is_ads, _is_shooting, bool(FpsPlacerInstance), _USE_EULER))
         # The menu does not expose fWidth/fHeight, so they are usually absent
         # from data.json. Fall back to 1080×720 instead of returning early -
         # that early return permanently disabled aim while ESP worked fine,
@@ -720,6 +797,8 @@ def AIMUpdate(*_, **__):
             return
         yaw   = max(min(dx * smoothing, 5.0), -5.0)
         pitch = max(min(-dy * smoothing, 5.0), -5.0)
+        _aim_diag("rotate cands=%d dx=%.1f dy=%.1f yaw=%.3f pitch=%.3f" % (
+            len(candidates), dx, dy, yaw, pitch))
         if _USE_EULER:
             try:
                 _ea = Space._instance.camera.euler_angles

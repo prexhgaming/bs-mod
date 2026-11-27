@@ -10,3 +10,9 @@
 - The injected script (`jni/include/cpp/srcpy.cpp`, the `srcpy` raw string) reads **only** `data.json`. There is no UDP settings channel — do not add one back.
 - C++ writes it from `jni/include/sync_with_py.h` into `GetConfigDir()` = `ANativeActivity::internalDataPath + "/Nexora/"`. Internal dir only, **no** `/storage/emulated/0` fallback: a fallback makes C++ and the script resolve different paths, so `sync_attrs` stays empty and every feature whose Python default is `False` (`bAIM`, `bESP_Skeleton`) looks broken while `bESP` (default `True`) still draws.
 - `data.json` is unlinked at activity creation (`sync_with_py_start_cleanup`) and rewritten on the first frame after `LoadConfig()`, so stale values never survive a launch.
+- Config key names must match **exactly** on both sides. C++ writes `fESP_MaxDistance` (not `fESP_MaxDist`); a typo on the Python side silently falls back to the Python default.
+
+## Debugging the injected script
+- `@TRY` and `@HOOK` log rate-limited tracebacks via `_log_exc()` instead of `except: pass` — check logcat for `[NEXORA][ERR]` when a feature does nothing.
+- `_esp_diag()` / `_aim_diag()` print `[NEXORA][ESP]` / `[NEXORA][AIM]` lines every 2 s: config key count, `bESP_Skeleton`, entity counts, bones collected, aim gate state, and the final `Rotate()` values. These say which stage stops.
+- The C++ ESP drawing (`jni/ESP/ESP.h`) is byte-identical to the known-good backup apart from `SkeletonESP`, so a broken feature is almost always a settings/transport problem, not drawing code.
