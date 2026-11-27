@@ -2,6 +2,7 @@ package com.fesu.renjana.hooks
 
 import android.os.Build
 import android.os.Environment
+import com.fesu.renjana.RenjanaApplication
 import com.fesu.renjana.utils.RenjanaLog
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
@@ -279,10 +280,13 @@ object AntiDetection {
      * @return Filtered list
      */
     fun filterPackageList(packages: List<String>): List<String> {
+        // The container's own id is the loader's, not this library's — hardcoding
+        // the original id here would leave our package visible to the guest.
+        val containerPackage = RenjanaApplication.get().packageName
         return packages.filter { pkg ->
             !isHookFrameworkPackage(pkg) &&
-            pkg != "com.fesu.renjana" &&
-            !pkg.startsWith("com.fesu.renjana.")
+            pkg != containerPackage &&
+            !pkg.startsWith("$containerPackage.")
         }
     }
 

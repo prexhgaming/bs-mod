@@ -3,6 +3,7 @@ package com.fesu.renjana.core
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import com.fesu.renjana.RenjanaApplication
 import com.fesu.renjana.models.Instance
 import com.fesu.renjana.utils.RenjanaLog
 import java.util.concurrent.ConcurrentHashMap
@@ -30,7 +31,18 @@ object ActivityStubManager {
 
     private const val TAG = "ActivityStubManager"
     private const val TOTAL_STUBS = 10
-    private const val STUB_PACKAGE = "com.fesu.renjana"
+
+    /**
+     * Class part of the stub ComponentNames, minus the numeric suffix.
+     *
+     * The stub classes live in this library's namespace, but the *package* half of
+     * their ComponentName is the running app's id, which the loader owns. Hardcoding
+     * the original app id here made every stub launch target a package that is not
+     * installed: `startActivity` threw ActivityNotFoundException, the launcher fell
+     * back to its non-isolated direct launch, and the user got the real installed
+     * game plus a "couldn't launch" toast instead of an isolated clone.
+     */
+    private const val STUB_CLASS_PREFIX = "com.fesu.renjana.core.StubActivity_"
 
     // ─── Stub pool state ───────────────────────────────────
 
@@ -101,11 +113,15 @@ object ActivityStubManager {
         instanceCache.remove(instanceId)
     }
 
-    // ─── StubActivity component name cache ──────────────────
+    // ─── StubActivity component names ───────────────────────
 
-    private val stubComponentNames = Array(TOTAL_STUBS) { i ->
-        ComponentName(STUB_PACKAGE, "$STUB_PACKAGE.core.StubActivity_$i")
-    }
+    /**
+     * ComponentName of stub slot [stubIndex] for the app installed as
+     * [hostPackage]. Resolved per call rather than cached: the host package is a
+     * property of the running app, not of this library.
+     */
+    private fun stubComponentName(hostPackage: String, stubIndex: Int): ComponentName =
+        ComponentName(hostPackage, "$STUB_CLASS_PREFIX$stubIndex")
 
     init {
         // All stubs start free
@@ -155,7 +171,7 @@ object ActivityStubManager {
                 val top = peekTop(stackKey)
                 if (top != null && top.guestClassName == guestClass) {
                     // Reuse existing stub — deliver via onNewIntent
-                    return buildReDeliveryIntent(top.stubIndex, guestIntent)
+                    return buildReDeliveryIntent(context, top.stubIndex, guestIntent)
                 }
             }
             LAUNCH_SINGLE_TASK, LAUNCH_SINGLE_INSTANCE -> {
@@ -165,7 +181,7 @@ object ActivityStubManager {
                         // Clear everything above this entry
                         clearAbove(stackKey, existing.stubIndex)
                     }
-                    return buildReDeliveryIntent(existing.stubIndex, guestIntent)
+                    return buildReDeliveryIntent(context, existing.stubIndex, guestIntent)
                 }
             }
         }
@@ -177,7 +193,7 @@ object ActivityStubManager {
         }
 
         val intent = Intent().apply {
-            component = stubComponentNames[stubIndex]
+            component = stubComponentName(context.packageName, stubIndex)
             putExtra(StubActivity.EXTRA_INSTANCE_ID, instanceId)
             putExtra(StubActivity.EXTRA_GUEST_ACTIVITY_CLASS, guestClass)
             putExtra(StubActivity.EXTRA_APK_PATH, apkPath)
@@ -279,8 +295,10 @@ object ActivityStubManager {
     fun freeStubCount(): Int = freeStubs.size
 
     /** Public component name for a stub slot (used by AppRuntimeRegistry.openApp). */
-    fun stubComponentFor(stubIndex: Int): ComponentName =
-        stubComponentNames[stubIndex.coerceIn(0, TOTAL_STUBS - 1)]
+    fun stubComponentFor(stubIndex: Int): ComponentName = stubComponentName(
+        RenjanaApplication.get().packageName,
+        stubIndex.coerceIn(0, TOTAL_STUBS - 1)
+    )
 
     // ──────────────────────────────────────────────
     // Called by StubActivity lifecycle
@@ -492,9 +510,9 @@ object ActivityStubManager {
     // Re-delivery intent for singleTop/singleTask
     // ──────────────────────────────────────────────
 
-    private fun buildReDeliveryIntent(stubIndex: Int, guestIntent: Intent?): Intent {
+    private fun buildReDeliveryIntent(context: Context, stubIndex: Int, guestIntent: Intent?): Intent {
         return Intent().apply {
-            component = stubComponentNames[stubIndex]
+            component = stubComponentName(context.packageName, stubIndex)
             addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
             if (guestIntent != null) {
                 putExtra(StubActivity.EXTRA_GUEST_ORIGINAL_INTENT, guestIntent)

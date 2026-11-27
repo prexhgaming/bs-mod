@@ -39,7 +39,7 @@
              stays declared, but it is no longer an entry point: the loader
              declares the only LAUNCHER activity in the merged manifest. -->
         <activity
-            android:name=".ui.MainActivity"
+            android:name="com.fesu.renjana.ui.MainActivity"
             android:exported="false"
             android:label="@string/app_name"
             android:theme="@style/Theme.Renjana" />
@@ -48,7 +48,7 @@
              explicitly: :core no longer sets an application-level theme, and this
              activity previously inherited it. -->
         <activity
-            android:name=".core.WrapperActivity"
+            android:name="com.fesu.renjana.core.WrapperActivity"
             android:exported="false"
             android:theme="@style/Theme.Renjana"
             android:configChanges="orientation|screenSize|keyboardHidden|keyboard|screenLayout|smallestScreenSize|uiMode|layoutDirection|fontScale|locale"
@@ -58,7 +58,7 @@
 
         <!-- Stub Activities for isolated guest app instances in dedicated processes (:p0 - :p9) -->
         <activity
-            android:name=".core.StubActivity_0"
+            android:name="com.fesu.renjana.core.StubActivity_0"
             android:exported="false"
             android:process=":p0"
             android:taskAffinity="com.fesu.renjana.guest"
@@ -67,7 +67,7 @@
             android:windowSoftInputMode="adjustResize"
             android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|keyboard|navigation|smallestScreenSize|uiMode|fontScale|locale|layoutDirection|density" />
         <activity
-            android:name=".core.StubActivity_1"
+            android:name="com.fesu.renjana.core.StubActivity_1"
             android:exported="false"
             android:process=":p1"
             android:taskAffinity="com.fesu.renjana.guest"
@@ -76,7 +76,7 @@
             android:windowSoftInputMode="adjustResize"
             android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|keyboard|navigation|smallestScreenSize|uiMode|fontScale|locale|layoutDirection|density" />
         <activity
-            android:name=".core.StubActivity_2"
+            android:name="com.fesu.renjana.core.StubActivity_2"
             android:exported="false"
             android:process=":p2"
             android:taskAffinity="com.fesu.renjana.guest"
@@ -85,7 +85,7 @@
             android:windowSoftInputMode="adjustResize"
             android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|keyboard|navigation|smallestScreenSize|uiMode|fontScale|locale|layoutDirection|density" />
         <activity
-            android:name=".core.StubActivity_3"
+            android:name="com.fesu.renjana.core.StubActivity_3"
             android:exported="false"
             android:process=":p3"
             android:taskAffinity="com.fesu.renjana.guest"
@@ -94,7 +94,7 @@
             android:windowSoftInputMode="adjustResize"
             android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|keyboard|navigation|smallestScreenSize|uiMode|fontScale|locale|layoutDirection|density" />
         <activity
-            android:name=".core.StubActivity_4"
+            android:name="com.fesu.renjana.core.StubActivity_4"
             android:exported="false"
             android:process=":p4"
             android:taskAffinity="com.fesu.renjana.guest"
@@ -103,7 +103,7 @@
             android:windowSoftInputMode="adjustResize"
             android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|keyboard|navigation|smallestScreenSize|uiMode|fontScale|locale|layoutDirection|density" />
         <activity
-            android:name=".core.StubActivity_5"
+            android:name="com.fesu.renjana.core.StubActivity_5"
             android:exported="false"
             android:process=":p5"
             android:taskAffinity="com.fesu.renjana.guest"
@@ -112,7 +112,7 @@
             android:windowSoftInputMode="adjustResize"
             android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|keyboard|navigation|smallestScreenSize|uiMode|fontScale|locale|layoutDirection|density" />
         <activity
-            android:name=".core.StubActivity_6"
+            android:name="com.fesu.renjana.core.StubActivity_6"
             android:exported="false"
             android:process=":p6"
             android:taskAffinity="com.fesu.renjana.guest"
@@ -121,7 +121,7 @@
             android:windowSoftInputMode="adjustResize"
             android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|keyboard|navigation|smallestScreenSize|uiMode|fontScale|locale|layoutDirection|density" />
         <activity
-            android:name=".core.StubActivity_7"
+            android:name="com.fesu.renjana.core.StubActivity_7"
             android:exported="false"
             android:process=":p7"
             android:taskAffinity="com.fesu.renjana.guest"
@@ -130,7 +130,7 @@
             android:windowSoftInputMode="adjustResize"
             android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|keyboard|navigation|smallestScreenSize|uiMode|fontScale|locale|layoutDirection|density" />
         <activity
-            android:name=".core.StubActivity_8"
+            android:name="com.fesu.renjana.core.StubActivity_8"
             android:exported="false"
             android:process=":p8"
             android:taskAffinity="com.fesu.renjana.guest"
@@ -139,7 +139,7 @@
             android:windowSoftInputMode="adjustResize"
             android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|keyboard|navigation|smallestScreenSize|uiMode|fontScale|locale|layoutDirection|density" />
         <activity
-            android:name=".core.StubActivity_9"
+            android:name="com.fesu.renjana.core.StubActivity_9"
             android:exported="false"
             android:process=":p9"
             android:taskAffinity="com.fesu.renjana.guest"
@@ -150,14 +150,14 @@
 
         <!-- Shortcut trampoline: launched by homescreen pinned shortcuts, immediately forwards to the instance -->
         <activity
-            android:name=".core.InstanceLaunchActivity"
+            android:name="com.fesu.renjana.core.InstanceLaunchActivity"
             android:exported="true"
             android:noHistory="true"
             android:excludeFromRecents="true"
             android:theme="@style/Theme.Renjana.Transparent" />
 
         <!-- Deep Link Dispatcher: intercepts http/https/custom-scheme links and routes to correct instance -->
-        <activity android:name=".core.DeepLinkDispatcherActivity"
+        <activity android:name="com.fesu.renjana.core.DeepLinkDispatcherActivity"
             android:exported="true"
             android:launchMode="singleTask"
             android:theme="@android:style/Theme.Translucent.NoTitleBar">
@@ -177,13 +177,13 @@
 
         <!-- Container Service (legacy stub, kept for compatibility) -->
         <service
-            android:name=".core.ContainerService"
+            android:name="com.fesu.renjana.core.ContainerService"
             android:exported="false"
             android:process=":container" />
 
         <!-- Instance Lifecycle Service (foreground service for background execution) -->
         <service
-            android:name=".core.InstanceLifecycleService"
+            android:name="com.fesu.renjana.core.InstanceLifecycleService"
             android:exported="false"
             android:foregroundServiceType="specialUse">
             <property
@@ -193,7 +193,7 @@
 
         <!-- Quick-switch floating bubble overlay -->
         <service
-            android:name=".core.QuickSwitchBubbleService"
+            android:name="com.fesu.renjana.core.QuickSwitchBubbleService"
             android:exported="false" />
 
         <!-- FileProvider for sharing crash reports as .txt files -->
