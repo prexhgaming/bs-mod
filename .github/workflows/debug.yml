@@ -1,12 +1,9 @@
 name: Build Debug APK
 
-# Debug variant only: no signing secrets, no Telegram. Every step here needs
-# nothing but the repository, so it is safe to run on pull requests.
+# Debug variant only: no signing secrets, no Telegram, no cache. Manual trigger
+# only — this exists to grab an installable APK on demand, and running it on every
+# push would duplicate what the release workflow already proves, at double the cost.
 on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -43,7 +40,7 @@ jobs:
         run: |
           set -euo pipefail
           chmod +x ./gradlew
-          ./gradlew :loader:assembleDebug --no-daemon --stacktrace
+          ./gradlew :loader:assembleDebug --no-daemon
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v4

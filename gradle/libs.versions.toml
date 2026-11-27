@@ -87,5 +87,8 @@ kotlinx-coroutines-android = { group = "org.jetbrains.kotlinx", name = "kotlinx-
 android-application = { id = "com.android.application", version.ref = "agp" }
 android-library = { id = "com.android.library", version.ref = "agp" }
 kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
-kotlin-parcelize = { id = "org.jetbrains.kotlin.plugin.parcelize", version.ref = "kotlin" }
+# Not listed on purpose: org.jetbrains.kotlin.plugin.parcelize is registered by
+# kotlin-gradle-plugin itself, so it must be applied by id with no version (see
+# core/build.gradle.kts). An alias carrying a version fails the build with
+# "plugin is already on the classpath with an unknown version".
 ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }

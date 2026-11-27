@@ -1,8 +1,13 @@
 plugins {
     alias(libs.plugins.android.library)
     alias(libs.plugins.kotlin.android)
+    // Applied by id with NO version: the `org.jetbrains.kotlin.plugin.parcelize`
+    // plugin id is registered by kotlin-gradle-plugin, which the root script
+    // already puts on the classpath via kotlin.android. Requesting it *with* a
+    // version fails with "plugin is already on the classpath with an unknown
+    // version, so compatibility cannot be checked" — hence no catalog alias here.
+    id("org.jetbrains.kotlin.plugin.parcelize")
     alias(libs.plugins.ksp)
-    alias(libs.plugins.kotlin.parcelize)
 }
 
 // The renjana engine, packaged as a library so a thin loader app can own the
