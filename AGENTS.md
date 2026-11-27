@@ -12,6 +12,7 @@
   signature are really inside the APK, then sends `bs-loader.apk` on success or
   `build.log` on failure (never both). `pipefail` is what makes a failed build
   fail the step — without it `tee` masks the status.
+- Build settings in `gradle.properties`: `org.gradle.parallel=true` and `org.gradle.caching=true`, with `-Xmx4096m` because parallel workers overlap `:core`'s Kotlin/KSP compile with `:loader`'s ndk-build. Do not drop the heap back to 2g while parallel is on.
 - Release is `minifyEnabled true` + `shrinkResources true`. That is only safe because `:core` declares `consumerProguardFiles 'proguard-rules.pro'`, which keeps the reflectively-reached engine pieces; `loader/proguard-rules.pro` covers only the loader's own classes. If a release-only crash appears, check the core rules before disabling minification.
 - **Signing**: `loader/build.gradle` reads **only** `loader/keystore/keystore.properties`
   (`storeFile` / `storePassword` / `keyAlias` / `keyPassword`), the same shape the
