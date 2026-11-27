@@ -2,7 +2,8 @@
 
 ## Build
 - `jni/` is the whole project (lib-only, no Gradle). Build with `ndk-build` from `jni/`.
-- CI: `.github/workflows/build.yml` — `nttld/setup-ndk@v1` (local-cache), zips `libzyn-bs.so`, posts it to Telegram.
+- CI: `.github/workflows/build.yml` — downloads the official NDK r27d zip and unpacks it with `unzip`, zips `libzyn-bs.so`, posts it to Telegram.
+- Do **not** switch CI back to an NDK setup action (e.g. `nttld/setup-ndk`): those unpack the archive with a JS extractor that drops symlinks, so `clang++` (a symlink to `clang`) is dangling and every compile fails with `clang++: No such file or directory`. `unzip` preserves the symlinks.
 
 ## Settings plumbing (easy to break silently)
 - The injected script (`jni/include/cpp/srcpy.cpp`, the `srcpy` raw string) reads **only** `data.json`. There is no UDP settings channel — do not add one back.

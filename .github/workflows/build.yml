@@ -1,4 +1,4 @@
-name: Build lib + Send to Telegram
+name: Build lib
 
 on:
   push:
@@ -6,79 +6,69 @@ on:
   pull_request:
   workflow_dispatch:
 
+env:
+  NDK_VERSION: r27d
+
 jobs:
   build:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup Android NDK
-        id: setup-ndk
-        uses: nttld/setup-ndk@v1
+      # The NDK is installed by unpacking the official archive with `unzip`.
+      # Do NOT replace this with a setup action: those extract the zip through a
+      # JS extractor that does not recreate symlinks, so clang++ (a symlink to
+      # clang) ends up dangling and every compile dies with
+      # "clang++: No such file or directory" even though the directory exists.
+      # `unzip` creates the symlinks, which is why this path builds reliably.
+      - name: Cache NDK
+        id: cache
+        uses: actions/cache@v4
         with:
-          ndk-version: r27d
-          local-cache: true
+          path: ${{ runner.temp }}/android-ndk-${{ env.NDK_VERSION }}
+          key: ndk-${{ env.NDK_VERSION }}-${{ runner.os }}
 
-      - name: Build native library with ndk-build
+      - name: Install NDK ${{ env.NDK_VERSION }}
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          curl -fsSL --retry 3 --retry-delay 5 \
+            -o "$RUNNER_TEMP/ndk.zip" \
+            "https://dl.google.com/android/repository/android-ndk-${NDK_VERSION}-linux.zip"
+          unzip -q "$RUNNER_TEMP/ndk.zip" -d "$RUNNER_TEMP"
+          rm -f "$RUNNER_TEMP/ndk.zip"
+
+      - name: Build
         working-directory: jni
         run: |
-          "$NDK_PATH/ndk-build" -j$(nproc) \
+          "$RUNNER_TEMP/android-ndk-${NDK_VERSION}/ndk-build" -j"$(nproc)" \
             NDK_PROJECT_PATH=. \
             NDK_APPLICATION_MK=./Application.mk \
             APP_BUILD_SCRIPT=./Android.mk
-        env:
-          NDK_PATH: ${{ steps.setup-ndk.outputs.ndk-path }}
 
-      - name: List build output
-        run: find "$GITHUB_WORKSPACE/jni/libs" -type f -name '*.so' -exec ls -lh {} \;
-
-      - name: Create zip of built library
-        id: zip
+      - name: Package
         run: |
-          cd "$GITHUB_WORKSPACE"
           mkdir -p artifacts
           zip -j artifacts/libzyn-bs.zip jni/libs/armeabi-v7a/libzyn-bs.so
-          echo "zip_path=artifacts/libzyn-bs.zip" >> $GITHUB_OUTPUT
           ls -lh artifacts/libzyn-bs.zip
 
-      - name: Upload zip as workflow artifact
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
           name: libzyn-bs
           path: artifacts/libzyn-bs.zip
 
-      - name: Verify Telegram secrets are set
+      - name: Send to Telegram
         if: github.event_name != 'pull_request'
         env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          CHAT: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
-          if [ -z "$TELEGRAM_BOT_TOKEN" ]; then
-            echo "::error::TELEGRAM_BOT_TOKEN secret is missing. Add it in repo Settings -> Secrets and variables -> Actions."
+          if [ -z "$TOKEN" ] || [ -z "$CHAT" ]; then
+            echo "::error::TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID secrets are missing"
             exit 1
           fi
-          if [ -z "$TELEGRAM_CHAT_ID" ]; then
-            echo "::error::TELEGRAM_CHAT_ID secret is missing. Add it in repo Settings -> Secrets and variables -> Actions."
-            exit 1
-          fi
-          echo "Telegram secrets present."
-
-      - name: Send zip to Telegram
-        if: github.event_name != 'pull_request'
-        env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          ZIP_PATH: ${{ steps.zip.outputs.zip_path }}
-          COMMIT_MSG: ${{ github.event.head_commit.message }}
-        run: |
-          CAPTION="bs-mod build ($GITHUB_SHA)"
-          if [ -n "$COMMIT_MSG" ]; then
-            CAPTION="$CAPTION - ${COMMIT_MSG:0:80}"
-          fi
-          curl -sS -f \
-            -F "chat_id=$TELEGRAM_CHAT_ID" \
-            -F "document=@$ZIP_PATH;filename=libzyn-bs.zip" \
-            -F "caption=$CAPTION" \
-            "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendDocument"
+          curl -sS -f -o /dev/null \
+            -F "chat_id=$CHAT" \
+            -F "document=@artifacts/libzyn-bs.zip;filename=libzyn-bs.zip" \
+            -F "caption=libzyn-bs ${GITHUB_SHA:0:7}" \
+            "https://api.telegram.org/bot$TOKEN/sendDocument"
