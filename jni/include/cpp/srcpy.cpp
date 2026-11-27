@@ -822,8 +822,9 @@ def AIMUpdate(*_, **__):
         # Prune aim tracker to prevent unbounded growth
         aim_ids = {c[4] for c in candidates}
         _aim_pos_track = {k: v for k, v in _aim_pos_track.items() if k in aim_ids}
-        _aim_diag("stage bone=%d proj=%d fov_out=%d ok=%d bone_name=%s maxdist=%.0f fov=%.0f" % (
-            _st_bone, _st_proj, _st_fov, len(candidates), selected_bone, max_dist, max_fov))
+        _aim_diag("stage bone=%d proj=%d fov_out=%d ok=%d regs=%d bone=%s maxdist=%.0f fov=%.0f" % (
+            _st_bone, _st_proj, _st_fov, len(candidates), _tick_regs,
+            selected_bone, max_dist, max_fov))
         if not candidates:
             return
         candidates.sort(key=lambda x: x[0])
@@ -848,6 +849,10 @@ def AIMUpdate(*_, **__):
             except: pass
     except: pass
 
+# Registration state for the space post-tick - see _register_tick().
+_tick_space = None
+_tick_regs  = 0
+
 def on_space_tick(dtime):
     try:
         if sync_attrs.get('bESP', True):
@@ -857,10 +862,32 @@ def on_space_tick(dtime):
     except:
         pass
 
+def _register_tick():
+    """Register on_space_tick once per Space instance.
+
+    This callback is the only thing that drives ESP *and* aim - neither is a
+    direct engine hook, both are called from here. Registering unconditionally
+    on every _on_enter_space adds another copy of the callback each match, and
+    AIMUpdate would then apply its yaw/pitch delta once per copy per frame: aim
+    overshoots and degrades with every match played. Guarding on the Space
+    identity still re-registers when the engine hands out a new Space.
+    """
+    global _tick_space, _tick_regs
+    try:
+        sp = Space._instance
+        if sp is None or sp is _tick_space:
+            return
+        sp.AddSpacePostTick(on_space_tick)
+        _tick_space = sp
+        _tick_regs += 1
+        _dbg("AIM", "space post-tick registered (n=%d)" % _tick_regs)
+    except Exception:
+        _log_exc("register_tick")
+
 @HOOK(PlayerCombatAvatar, 0)
 def on_enter_space(self, *args, **kwargs):
     result = PlayerCombatAvatar._on_enter_space(self, *args, **kwargs)
-    Space._instance.AddSpacePostTick(on_space_tick)
+    _register_tick()
     return result
 
 

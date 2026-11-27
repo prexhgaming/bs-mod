@@ -16,6 +16,11 @@
 - `@TRY` and `@HOOK` log rate-limited tracebacks via `_log_exc()` instead of `except: pass` — check logcat for `[NEXORA][ERR]` when a feature does nothing.
 - `_esp_diag()` / `_aim_diag()` print `[NEXORA][ESP]` / `[NEXORA][AIM]` lines every 2 s: config key count, `bESP_Skeleton`, entity counts, bones collected, aim gate state, and the final `Rotate()` values. These say which stage stops. Aim also logs `stage bone=<n> proj=<n> fov_out=<n> ok=<n>`: `ok=0` with `bone>0` means bone lookups are failing, `proj>0` means the projection is.
 
+## How ESP and aim are driven (neither is a direct engine hook)
+- `AIMUpdate` is **not** decorated with `@HOOK`. The only driver is `on_space_tick`, registered through `Space._instance.AddSpacePostTick(...)` inside the `@HOOK(PlayerCombatAvatar)` `on_enter_space` wrapper. `on_space_tick` calls `EspUpdate()` (gated by `bESP`, default True) and `AIMUpdate()` (gated by `bAIM`, default False) — same callback, so if boxes draw, the chain is alive and the aim fault is downstream, not in the hook.
+- Register through `_register_tick()`, never directly: it registers once per Space instance. Calling `AddSpacePostTick` on every `_on_enter_space` adds a duplicate callback each match and aim then applies its yaw/pitch delta once per copy per frame (overshoots, worse every match). Unit-tested in `uploads/test_register_tick.py`.
+- `FpsPlacerInstance` comes from `@HOOK(FpsPlacer) OnStaticTick`; if that hook never fired the script falls back to `camera.fps_placer`, then to writing `camera.euler_angles` (`_USE_EULER`). `[NEXORA][AIM] run ... fpp=... euler=...` shows which path is live.
+
 ## Bones: ESP and aim are separate pipelines
 - ESP skeleton collects bones only when `bESP_Skeleton` is on and the head is on screen; aim never uses that dict and does not need the toggle. Both depend on the engine's `entity.model.GetBoneWorldPosition(name)`.
 - Never write `GetBoneWorldPosition(a) or GetBoneWorldPosition(b)`: a bone the skeleton lacks **raises**, so the `or` fallback never runs and the caller's bare `except` drops the entity. Use `_aim_bone_pos()` (per-name guards, then `entity.position`), which is unit-tested in `uploads/test_aim_bone.py`.
